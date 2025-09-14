@@ -21,66 +21,34 @@ async function buildSmartContext(userId, message, dbPool, entities) {
   }
 
   try {
-    // Build query dynamically based on available parameters
-    let query = `
-      SELECT
-        f.flight_id,
-        f.flight_number,
-        f.departure_time,
-        f.arrival_time,
-        f.base_price,
-        f.available_seats,
-        f.trip_type,
-        da.airport_name as departure_airport_name,
-        da.airport_code as departure_airport_code,
-        da.city_name as departure_city_name,
-        aa.airport_name as arrival_airport_name,
-        aa.airport_code as arrival_airport_code,
-        aa.city_name as arrival_city_name,
-        al.airline_name
-      FROM flights f
-      LEFT JOIN airports da ON f.departure_airport_id = da.airport_id
-      LEFT JOIN airports aa ON f.arrival_airport_id = aa.airport_id
-      LEFT JOIN airlines al ON f.airline_id = al.airline_id
-      WHERE f.status IN ('ON_TIME', 'DELAYED', 'SCHEDULED')
-    `;
+    // Sử dụng queries.searchFlightsChatbot có sẵn thay vì build lại
+    const queryParams = [
+      // Departure search parameters
+      departureCity || null,
+      departureCity ? `%${departureCity}%` : null, // city_name LIKE
+      departureCity ? `%${departureCity}%` : null, // airport_name LIKE
+      departureCity || null, // airport_code =
 
-    const queryParams = [];
+      // Arrival search parameters
+      arrivalCity || null,
+      arrivalCity ? `%${arrivalCity}%` : null, // city_name LIKE
+      arrivalCity ? `%${arrivalCity}%` : null, // airport_name LIKE
+      arrivalCity || null, // airport_code =
 
-    // Add departure conditions
-    if (departureCity) {
-      query += ` AND (? IS NULL OR LOWER(da.city_name) LIKE LOWER(?) OR LOWER(da.airport_name) LIKE LOWER(?) OR LOWER(da.airport_code) = LOWER(?))`;
-      queryParams.push(
-        departureCity,
-        `%${departureCity}%`,
-        `%${departureCity}%`,
-        departureCity
-      );
-    }
+      // Date parameters
+      date || null, // date check
+      date || null, // date value for DATE()
+    ];
 
-    // Add arrival conditions
-    if (arrivalCity) {
-      query += ` AND (? IS NULL OR LOWER(aa.city_name) LIKE LOWER(?) OR LOWER(aa.airport_name) LIKE LOWER(?) OR LOWER(aa.airport_code) = LOWER(?))`;
-      queryParams.push(
-        arrivalCity,
-        `%${arrivalCity}%`,
-        `%${arrivalCity}%`,
-        arrivalCity
-      );
-    }
+    console.log(
+      "📝 Using searchFlightsChatbot query with params:",
+      queryParams
+    );
 
-    // Add date condition
-    if (date) {
-      query += ` AND DATE(f.departure_time) = ?`;
-      queryParams.push(date);
-    }
-
-    query += ` ORDER BY f.departure_time ASC LIMIT 50`;
-
-    console.log("📝 Final query:", query);
-    console.log("📝 Query params:", queryParams);
-
-    const [rows] = await dbPool.query(query, queryParams);
+    const [rows] = await dbPool.query(
+      queries.searchFlightsChatbot,
+      queryParams
+    );
     console.log("✈️ Found flights:", rows.length);
 
     if (rows.length === 0) {
@@ -99,12 +67,10 @@ async function buildSmartContext(userId, message, dbPool, entities) {
     const flights = rows.map((flight, index) => ({
       flightId: flight.flight_id || "N/A",
       flightNumber: flight.flight_number || "N/A",
-      airline: flight.airline_name || "Unknown Airline",
+      airline: flight.airline_name || "N/A",
       tripType: flight.trip_type || "One-way",
-      departure: flight.departure_city_name || "N/A",
       departureAirport: flight.departure_airport_name || "N/A",
       departureCode: flight.departure_airport_code || "N/A",
-      arrival: flight.arrival_city_name || "N/A",
       arrivalAirport: flight.arrival_airport_name || "N/A",
       arrivalCode: flight.arrival_airport_code || "N/A",
       departureTime: flight.departure_time
@@ -122,21 +88,22 @@ async function buildSmartContext(userId, message, dbPool, entities) {
       price: flight.base_price
         ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
         : "N/A",
-      seats: flight.available_seats != null
-        ? flight.available_seats.toString()
-        : "N/A",
     }));
 
     // Create detailed markdown message
     let markdownMessage = `## ✈️ Kết quả tìm kiếm chuyến bay\n\n`;
-    markdownMessage += `**Tuyến bay:** ${departureCity || "N/A"} → ${arrivalCity || "N/A"}\n`;
+    markdownMessage += `**Tuyến bay:** ${departureCity || "N/A"} → ${
+      arrivalCity || "N/A"
+    }\n`;
     markdownMessage += `**Số chuyến bay tìm thấy:** ${flights.length}\n\n`;
 
     if (flights.length > 0) {
       markdownMessage += `### 📋 Danh sách chuyến bay:\n\n`;
 
       flights.forEach((flight, index) => {
-        markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${flight.airline}\n`;
+        markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${
+          flight.airline
+        }\n`;
         markdownMessage += `- **Từ:** ${flight.departure} (${flight.departureAirport} - ${flight.departureCode})\n`;
         markdownMessage += `- **Đến:** ${flight.arrival} (${flight.arrivalAirport} - ${flight.arrivalCode})\n`;
         markdownMessage += `- **Giờ khởi hành:** ${flight.departureTime}\n`;

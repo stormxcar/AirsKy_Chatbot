@@ -3,7 +3,34 @@ const { extractEntitiesFromMessage } = require("../utils/entityExtractor");
 const { buildSmartContext } = require("../utils/contextBuilder");
 const { buildPrompt } = require("../utils/promptBuilder");
 const { callAPI } = require("../utils/api");
+const { findCannedResponse } = require("../utils/cannedResponses");
+const { errors } = require("../config/errors");
 const logger = require("../utils/logger");
+
+/**
+ * Format price in Vietnamese currency
+ * @param {string|number} price - Price value
+ * @returns {string} Formatted price
+ */
+function formatVietnamesePrice(price) {
+  if (!price) return "Liên hệ";
+
+  // Remove currency symbol if present
+  const numericPrice =
+    typeof price === "string"
+      ? parseFloat(price.replace(/[^\d.]/g, ""))
+      : price;
+
+  if (isNaN(numericPrice)) return price;
+
+  // Format with Vietnamese locale
+  return new Intl.NumberFormat("vi-VN", {
+    style: "currency",
+    currency: "VND",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(numericPrice);
+}
 
 /**
  * Handle chat message from socket
@@ -17,6 +44,24 @@ function handleChatMessage(io, socket, dbPool) {
     logger.info(`💬 Message from ${userId}:`, message);
 
     try {
+      // Check for canned responses first
+      const cannedResponse = await findCannedResponse(message, dbPool);
+      logger.info(
+        "📋 Canned response result:",
+        JSON.stringify(cannedResponse, null, 2)
+      );
+      if (cannedResponse) {
+        logger.info("📋 Using canned response for:", message);
+        socket.emit("chat_response", {
+          userId,
+          response: cannedResponse.message,
+          type: cannedResponse.type,
+          timestamp: new Date().toISOString(),
+          isCanned: true,
+        });
+        return;
+      }
+
       // Extract entities from message
       const entities = await extractEntitiesFromMessage(message);
       logger.debug("🤖 Extracted entities:", entities);
@@ -30,7 +75,64 @@ function handleChatMessage(io, socket, dbPool) {
       );
       logger.debug("🤖 Built context:", context);
 
-      // Build prompt
+      // Check if we have flight data - build structured JSON response
+      if (
+        context.type === "flights" &&
+        context.data &&
+        context.data.length > 0
+      ) {
+        logger.info("✈️ Found flights, building structured JSON response");
+
+        // Format flights data with Vietnamese price formatting
+        const formattedFlights = context.data.map((flight) => ({
+          flightId: flight.flightId,
+          flightNumber: flight.flightNumber,
+          airline: flight.airline,
+          tripType: flight.tripType,
+          departureAirport: flight.departureAirport,
+          departureCode: flight.departureCode,
+          arrivalAirport: flight.arrivalAirport,
+          arrivalCode: flight.arrivalCode,
+          departureTime: flight.departureTime,
+          arrivalTime: flight.arrivalTime,
+          price: formatVietnamesePrice(flight.price),
+        }));
+
+        const responseMessage = `**Chào bạn!**\n\nTuyệt vời! Mình đã tìm thấy **${
+          context.data.length
+        } chuyến bay** từ **${entities.departure || "N/A"}** đến **${
+          entities.arrival || "N/A"
+        }** vào **${
+          entities.date
+            ? new Date(entities.date).toLocaleDateString("vi-VN")
+            : "ngày yêu cầu"
+        }**.`;
+
+        socket.emit("chat_response", {
+          userId,
+          message: responseMessage,
+          flights: formattedFlights, // Array of flight objects
+          context: {
+            type: context.type,
+            totalFlights: context.data.length,
+            searchCriteria: {
+              departure: entities.departure,
+              arrival: entities.arrival,
+              date: entities.date,
+            },
+          },
+          timestamp: new Date().toISOString(),
+          isCanned: false,
+        });
+        logger.info(
+          "📤 Emitted flight response with",
+          formattedFlights.length,
+          "flights"
+        );
+        return;
+      }
+
+      // Build prompt for other cases
       const prompt = buildPrompt(message, context, entities);
       logger.debug("🤖 Generated prompt length:", prompt.length);
 
@@ -40,20 +142,33 @@ function handleChatMessage(io, socket, dbPool) {
 
       // Send response back to client
       socket.emit("chat_response", {
+        userId,
         message: aiResponse,
         context: context,
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
+        isCanned: false,
       });
     } catch (error) {
       logger.error("❌ Error processing message:", error);
 
+      // Create structured error response
+      const errorResponse = errors.internal({
+        originalError: error.message,
+        userId: userId,
+        timestamp: new Date().toISOString(),
+      });
+
       socket.emit("chat_response", {
-        message: "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn của bạn.",
+        userId,
+        message:
+          "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.",
+        error: errorResponse.toJSON().error, // Include structured error info
         context: {
           type: "error",
-          message: "Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn của bạn.",
+          message: "Lỗi hệ thống",
         },
-        timestamp: new Date(),
+        timestamp: new Date().toISOString(),
+        isCanned: false,
       });
     }
   });
@@ -106,4 +221,5 @@ module.exports = {
   handleChatMessage,
   handleJoin,
   handleDisconnect,
+  formatVietnamesePrice,
 };

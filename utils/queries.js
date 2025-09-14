@@ -44,7 +44,6 @@ const queries = {
       f.departure_time,
       f.arrival_time,
       f.base_price,
-      f.available_seats,
       f.trip_type,
       da.airport_name as departure_airport_name,
       da.airport_code as departure_airport_code,
@@ -57,25 +56,35 @@ const queries = {
     LEFT JOIN airports da ON f.departure_airport_id = da.airport_id
     LEFT JOIN airports aa ON f.arrival_airport_id = aa.airport_id
     LEFT JOIN airlines al ON f.airline_id = al.airline_id
-    WHERE f.status = 'active'
+    WHERE f.status IN ('ON_TIME', 'DELAYED', 'SCHEDULED')
     AND (? IS NULL OR LOWER(da.city_name) LIKE LOWER(?) OR LOWER(da.airport_name) LIKE LOWER(?) OR LOWER(da.airport_code) = LOWER(?))
     AND (? IS NULL OR LOWER(aa.city_name) LIKE LOWER(?) OR LOWER(aa.airport_name) LIKE LOWER(?) OR LOWER(aa.airport_code) = LOWER(?))
-    AND (? IS NULL OR DATE(f.departure_time) = DATE(?))
+    AND (? IS NULL OR DATE(f.departure_time) = ?)
     ORDER BY f.departure_time ASC
     LIMIT 50
   `,
 
-  // Lấy danh sách blog
-  getBlogsList: `
+  // Lấy danh sách airlines cho canned responses
+  getAirlinesList: `
     SELECT
-      title,
-      slug,
-      content,
-      published_date
-    FROM blogs
-    WHERE is_published = true
-    ORDER BY published_date DESC
-    LIMIT 5
+      airline_id,
+      airline_name,
+      airline_code
+    FROM airlines
+    WHERE is_active = true
+    ORDER BY airline_name ASC
+  `,
+
+  // Lấy danh sách airports cho canned responses
+  getAirportsList: `
+    SELECT
+      airport_id,
+      airport_name,
+      airport_code,
+      city_name
+    FROM airports
+    WHERE is_deleted = false
+    ORDER BY city_name ASC
   `,
 
   // Debug: Kiểm tra dữ liệu trong database

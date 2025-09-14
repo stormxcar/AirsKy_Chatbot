@@ -75,7 +75,7 @@ module.exports = {
     - VÍ DỠ: "SGN đến HAN" → departure: "SGN", arrival: "HAN"
     - VÍ DỤ: "từ sân bay cam ranh" → departure: "Cam Ranh"
     - VÍ DỠ: "đến sân bay quốc tế nội bài" → arrival: "Hà Nội"
-    - VÍ DỤ: "chuyến bay ngày 1/6" → date: "2024-06-01"
+    - VÍ DỤ: "chuyến bay ngày 1/6" → date: "2025-06-01"
     - VÍ DỤ: "tôi muốn bay từ ninh thuận" → departure: "Ninh Thuận"
     - Nếu không có thông tin, trả về null
 

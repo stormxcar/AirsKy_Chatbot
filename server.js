@@ -7,12 +7,14 @@ const cors = require("cors");
 // Import configurations
 const serverConfig = require("./config/server");
 const dbConfig = require("./config/database");
+const { handleError } = require("./config/errors");
 
 // Import services
 const { initializeSocketHandlers } = require("./services/chatService");
 
 // Import utils
 const logger = require("./utils/logger");
+const { loadDataFromDatabase } = require("./utils/cannedResponses");
 
 // Initialize Express app
 const app = express();
@@ -40,6 +42,18 @@ app.get("/test", (req, res) => {
 
 // Initialize socket handlers
 initializeSocketHandlers(io, dbConfig);
+
+// Load canned response data from database
+loadDataFromDatabase(dbConfig)
+  .then(() => {
+    logger.info("📋 Canned response data loaded successfully");
+  })
+  .catch((error) => {
+    logger.error("❌ Failed to load canned response data:", error);
+  });
+
+// Error handling middleware (must be last)
+app.use(handleError);
 
 // Start server
 const PORT = serverConfig.PORT;

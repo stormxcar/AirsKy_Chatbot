@@ -1,5 +1,6 @@
 // utils/validation.js
 const logger = require("./logger");
+const { errors } = require("../config/errors");
 
 class ValidationError extends Error {
   constructor(message, field) {

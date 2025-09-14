@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chatbot Test - AirsKy</title>
-    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -172,9 +172,7 @@
             <button class="btn-success test-btn"
                 onclick="sendTestMessage('Tôi muốn tìm chuyến bay từ Sài Gòn đến Hà Nội')">Sài Gòn -> Hà Nội</button>
 
-            <button class="btn-success test-btn" onclick="sendTestMessage('Giá vé máy bay rẻ nhất từ TP.HCM')">TP.HCM
-                giá rẻ</button>
-            <button class="btn-success test-btn" onclick="sendTestMessage('Hello')">Hello</button>
+
         </div>
 
         <input type="text" id="customMessage" class="message-input" placeholder="Nhập tin nhắn tùy chỉnh..."
@@ -229,15 +227,22 @@
             });
 
             socket.on('chat_response', (data) => {
-                log(`📥 Chat Response:
-Message: ${data.message}
-Context Type: ${data.context?.type || 'N/A'}
-Data Items: ${data.context?.data?.length || 0}
-Timestamp: ${data.timestamp}`, 'response');
+                let logMessage = `📥 Chat Response:
+Message: ${data.message || data.response || 'undefined'}
+Context Type: ${data.context?.type || data.type || 'N/A'}
+Data Items: ${data.flights?.length || data.context?.totalFlights || 0}
+Timestamp: ${data.timestamp}`;
 
-                if (data.context?.data && data.context.data.length > 0) {
-                    log(`📊 Sample Data: ${JSON.stringify(data.context.data[0], null, 2)}`, 'info');
+                // Log flights data if available
+                if (data.flights && data.flights.length > 0) {
+                    logMessage += `\n📊 Flights Data (${data.flights.length} items):`;
+                    data.flights.forEach((flight, index) => {
+                        logMessage += `\n  ${index + 1}. ${flight.flightNumber} - ${flight.airline} - ${flight.price}`;
+                    });
+                    logMessage += `\n📊 Full JSON: ${JSON.stringify(data.flights, null, 2)}`;
                 }
+
+                log(logMessage, 'response');
             });
 
             socket.on('chat_history', (history) => {
