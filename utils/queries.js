@@ -36,37 +36,34 @@ const queries = {
     LIMIT 20
   `,
 
-  // Tìm kiếm chuyến bay
-  searchFlights: `
+  // Query tối ưu cho chatbot - bao gồm tên và mã sân bay (enhanced version)
+  searchFlightsChatbot: `
     SELECT
       f.flight_id,
       f.flight_number,
       f.departure_time,
       f.arrival_time,
-      f.duration,
       f.base_price,
       f.available_seats,
-      f.status,
-      f.stops,
-      f.type,
+      f.trip_type,
       da.airport_name as departure_airport_name,
       da.airport_code as departure_airport_code,
       da.city_name as departure_city_name,
       aa.airport_name as arrival_airport_name,
       aa.airport_code as arrival_airport_code,
       aa.city_name as arrival_city_name,
-      al.airline_name,
-      al.airline_code
+      al.airline_name
     FROM flights f
     LEFT JOIN airports da ON f.departure_airport_id = da.airport_id
     LEFT JOIN airports aa ON f.arrival_airport_id = aa.airport_id
     LEFT JOIN airlines al ON f.airline_id = al.airline_id
-    WHERE (? IS NULL OR LOWER(da.city_name) LIKE LOWER(?) OR LOWER(da.airport_name) LIKE LOWER(?) OR LOWER(da.airport_code) = LOWER(?))
+    WHERE f.status = 'active'
+    AND (? IS NULL OR LOWER(da.city_name) LIKE LOWER(?) OR LOWER(da.airport_name) LIKE LOWER(?) OR LOWER(da.airport_code) = LOWER(?))
     AND (? IS NULL OR LOWER(aa.city_name) LIKE LOWER(?) OR LOWER(aa.airport_name) LIKE LOWER(?) OR LOWER(aa.airport_code) = LOWER(?))
-    AND (? IS NULL OR DATE(f.departure_time) = ?)
+    AND (? IS NULL OR DATE(f.departure_time) = DATE(?))
     ORDER BY f.departure_time ASC
     LIMIT 50
-`,
+  `,
 
   // Lấy danh sách blog
   getBlogsList: `

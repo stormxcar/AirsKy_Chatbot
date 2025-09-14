@@ -14,7 +14,7 @@ async function extractEntitiesFromMessage(message) {
   );
 
   try {
-    const response = await callGeminiAPI(extractPrompt); // Actually using Mistral API
+    const response = await callAPI(extractPrompt); // Actually using Mistral API
     console.log("🤖 Mistral raw response:", response);
     const jsonMatch = response.match(/\{.*\}/s);
     if (jsonMatch) {
@@ -120,7 +120,9 @@ async function extractCities(message, dbPool, entities) {
   try {
     if (!airportCache.has("airports")) {
       console.log("📋 Fetching airports for cache...");
-      const [allAirports] = await dbPool.execute(queries.getAirportsList);
+      const result = await dbPool.execute(queries.getAirportsList);
+      const allAirports =
+        Array.isArray(result) && result.length > 0 ? result[0] : result;
       airportCache.set("airports", allAirports);
       console.log("📋 Airport cache loaded:", allAirports.length, "items");
     }

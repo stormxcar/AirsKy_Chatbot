@@ -1,172 +1,169 @@
 const queries = require("./queries");
-const config = require("./config");
-const { extractDate, extractCities } = require("./entityExtractor");
+const { extractDate } = require("./entityExtractor");
 
-// Hàm xây dựng context
+// Hàm xây dựng context tối ưu
 async function buildSmartContext(userId, message, dbPool, entities) {
-  const lowerMessage = message.toLowerCase();
-  console.log("Building context for message:", message);
-  console.log("Entities from Mistral:", entities);
+  console.log("🔍 Building context for:", message);
+  console.log("🔍 Entities:", entities);
 
   const departureCity = entities.departure || null;
   const arrivalCity = entities.arrival || null;
-  const extractedDate = entities.date || extractDate(message);
+  const date = entities.date || extractDate(message);
 
-  console.log(
-    "🔍 Before extractCities - departure:",
-    departureCity,
-    "arrival:",
-    arrivalCity
-  );
-
-  const cities = await extractCities(message, dbPool, entities);
-  console.log("🔍 Cities from extractCities:", cities);
-
-  const searchInfo = {
-    departureCity: departureCity || cities[0] || null,
-    arrivalCity: arrivalCity || cities[1] || cities[0] || null,
-    date: extractedDate,
-  };
-
-  console.log("🔍 Final search info:", searchInfo);
-
-  // Danh sách tỉnh không có sân bay
-  const noAirportCities = config.NO_AIRPORT_CITIES;
-  const noAirportSuggestions = config.NO_AIRPORT_SUGGESTIONS;
-
-  if (searchInfo.date || searchInfo.departureCity || searchInfo.arrivalCity) {
-    // Kiểm tra tỉnh không có sân bay (chỉ khi có city được chỉ định)
-    if (searchInfo.departureCity || searchInfo.arrivalCity) {
-      const hasNoAirport =
-        noAirportCities.includes(searchInfo.departureCity?.toLowerCase()) ||
-        noAirportCities.includes(searchInfo.arrivalCity?.toLowerCase());
-      if (hasNoAirport) {
-        const city = noAirportCities.includes(
-          searchInfo.departureCity?.toLowerCase()
-        )
-          ? searchInfo.departureCity
-          : searchInfo.arrivalCity;
-        return {
-          type: "flights",
-          message: `Không tìm thấy chuyến bay đến/đi từ ${city}. ${
-            noAirportSuggestions[city.toLowerCase()] || "Thử sân bay gần nhất."
-          }`,
-          data: [],
-        };
-      }
-    }
-
-    try {
-      const queryParams = [
-        searchInfo.departureCity || null,
-        searchInfo.departureCity ? `%${searchInfo.departureCity}%` : null,
-        searchInfo.departureCity ? `%${searchInfo.departureCity}%` : null,
-        searchInfo.departureCity || null,
-        searchInfo.arrivalCity || null,
-        searchInfo.arrivalCity ? `%${searchInfo.arrivalCity}%` : null,
-        searchInfo.arrivalCity ? `%${searchInfo.arrivalCity}%` : null,
-        searchInfo.arrivalCity || null,
-        searchInfo.date || null,
-        searchInfo.date || null,
-      ];
-
-      console.log("📝 Query params:", queryParams);
-
-      const [rows] = await dbPool.execute(queries.searchFlights, queryParams);
-      console.log("✈️ Flights found:", rows.length, "items");
-
-      const flights = rows.map((flight) => ({
-        flightNumber: flight.flight_number || "N/A",
-        airline: flight.airline_name || "Unknown Airline",
-        departure: flight.departure_city_name || "N/A",
-        arrival: flight.arrival_city_name || "N/A",
-        departureTime: flight.departure_time
-          ? new Date(flight.departure_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        arrivalTime: flight.arrival_time
-          ? new Date(flight.arrival_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        duration: flight.duration
-          ? `${Math.floor(flight.duration / 60)}h ${flight.duration % 60}m`
-          : "N/A",
-        price: flight.base_price
-          ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
-          : "N/A",
-        seats:
-          flight.available_seats != null
-            ? flight.available_seats.toString()
-            : "N/A",
-        status: flight.status || "ON_TIME",
-        date: flight.departure_time
-          ? new Date(flight.departure_time).toLocaleDateString("vi-VN")
-          : "N/A",
-      }));
-
-      return {
-        type: "flights",
-        message:
-          flights.length > 0
-            ? searchInfo.departureCity || searchInfo.arrivalCity
-              ? "CÁC CHUYẾN BAY PHÙ HỢP:"
-              : `CÁC CHUYẾN BAY VÀO NGÀY ${
-                  searchInfo.date
-                    ? new Date(searchInfo.date).toLocaleDateString("vi-VN")
-                    : "được chọn"
-                }:`
-            : "Không tìm thấy chuyến bay phù hợp.",
-        data: flights,
-      };
-    } catch (error) {
-      console.error("❌ Error fetching flights:", error.message);
-      return {
-        type: "flights",
-        message: "Không thể tìm kiếm chuyến bay. Vui lòng thử lại sau.",
-        data: [],
-      };
-    }
-  } else if (
-    lowerMessage.includes("sân bay") ||
-    lowerMessage.includes("airport")
-  ) {
-    try {
-      console.log("📋 Fetching airports list...");
-      const [rows] = await dbPool.execute(queries.getAirportsList);
-      console.log("📋 Airports found:", rows.length, "items");
-
-      const airports = rows.map((airport) => ({
-        name: airport.airport_name || "N/A",
-        code: airport.airport_code || "N/A",
-        city: airport.city_name || "N/A",
-      }));
-
-      return {
-        type: "airports",
-        message: "DANH SÁCH SÂN BAY:",
-        data: airports,
-      };
-    } catch (error) {
-      console.error("❌ Error fetching airports:", error.message);
-      return {
-        type: "airports",
-        message: "Không thể tải dữ liệu sân bay.",
-        data: [],
-      };
-    }
+  // Nếu không có thông tin tìm kiếm, trả về text response
+  if (!departureCity && !arrivalCity && !date) {
+    return {
+      type: "text",
+      message:
+        "Để tìm chuyến bay, bạn hãy cho tôi biết điểm đi và điểm đến nhé!",
+      data: [],
+    };
   }
 
-  return {
-    type: "text",
-    message: "Vui lòng cung cấp thông tin thành phố hoặc sân bay để tìm kiếm.",
-    data: [],
-  };
+  try {
+    // Build query dynamically based on available parameters
+    let query = `
+      SELECT
+        f.flight_id,
+        f.flight_number,
+        f.departure_time,
+        f.arrival_time,
+        f.base_price,
+        f.available_seats,
+        f.trip_type,
+        da.airport_name as departure_airport_name,
+        da.airport_code as departure_airport_code,
+        da.city_name as departure_city_name,
+        aa.airport_name as arrival_airport_name,
+        aa.airport_code as arrival_airport_code,
+        aa.city_name as arrival_city_name,
+        al.airline_name
+      FROM flights f
+      LEFT JOIN airports da ON f.departure_airport_id = da.airport_id
+      LEFT JOIN airports aa ON f.arrival_airport_id = aa.airport_id
+      LEFT JOIN airlines al ON f.airline_id = al.airline_id
+      WHERE f.status IN ('ON_TIME', 'DELAYED', 'SCHEDULED')
+    `;
+
+    const queryParams = [];
+
+    // Add departure conditions
+    if (departureCity) {
+      query += ` AND (? IS NULL OR LOWER(da.city_name) LIKE LOWER(?) OR LOWER(da.airport_name) LIKE LOWER(?) OR LOWER(da.airport_code) = LOWER(?))`;
+      queryParams.push(
+        departureCity,
+        `%${departureCity}%`,
+        `%${departureCity}%`,
+        departureCity
+      );
+    }
+
+    // Add arrival conditions
+    if (arrivalCity) {
+      query += ` AND (? IS NULL OR LOWER(aa.city_name) LIKE LOWER(?) OR LOWER(aa.airport_name) LIKE LOWER(?) OR LOWER(aa.airport_code) = LOWER(?))`;
+      queryParams.push(
+        arrivalCity,
+        `%${arrivalCity}%`,
+        `%${arrivalCity}%`,
+        arrivalCity
+      );
+    }
+
+    // Add date condition
+    if (date) {
+      query += ` AND DATE(f.departure_time) = ?`;
+      queryParams.push(date);
+    }
+
+    query += ` ORDER BY f.departure_time ASC LIMIT 50`;
+
+    console.log("📝 Final query:", query);
+    console.log("📝 Query params:", queryParams);
+
+    const [rows] = await dbPool.query(query, queryParams);
+    console.log("✈️ Found flights:", rows.length);
+
+    if (rows.length === 0) {
+      return {
+        type: "flights",
+        message: `Không tìm thấy chuyến bay từ ${
+          departureCity || "điểm đi"
+        } đến ${arrivalCity || "điểm đến"}${
+          date ? ` vào ngày ${date}` : ""
+        }. Vui lòng thử ngày khác hoặc liên hệ hotline.`,
+        data: [],
+      };
+    }
+
+    // Format flight data with markdown
+    const flights = rows.map((flight, index) => ({
+      flightId: flight.flight_id || "N/A",
+      flightNumber: flight.flight_number || "N/A",
+      airline: flight.airline_name || "Unknown Airline",
+      tripType: flight.trip_type || "One-way",
+      departure: flight.departure_city_name || "N/A",
+      departureAirport: flight.departure_airport_name || "N/A",
+      departureCode: flight.departure_airport_code || "N/A",
+      arrival: flight.arrival_city_name || "N/A",
+      arrivalAirport: flight.arrival_airport_name || "N/A",
+      arrivalCode: flight.arrival_airport_code || "N/A",
+      departureTime: flight.departure_time
+        ? new Date(flight.departure_time).toLocaleTimeString("vi-VN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "N/A",
+      arrivalTime: flight.arrival_time
+        ? new Date(flight.arrival_time).toLocaleTimeString("vi-VN", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "N/A",
+      price: flight.base_price
+        ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
+        : "N/A",
+      seats: flight.available_seats != null
+        ? flight.available_seats.toString()
+        : "N/A",
+    }));
+
+    // Create detailed markdown message
+    let markdownMessage = `## ✈️ Kết quả tìm kiếm chuyến bay\n\n`;
+    markdownMessage += `**Tuyến bay:** ${departureCity || "N/A"} → ${arrivalCity || "N/A"}\n`;
+    markdownMessage += `**Số chuyến bay tìm thấy:** ${flights.length}\n\n`;
+
+    if (flights.length > 0) {
+      markdownMessage += `### 📋 Danh sách chuyến bay:\n\n`;
+
+      flights.forEach((flight, index) => {
+        markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${flight.airline}\n`;
+        markdownMessage += `- **Từ:** ${flight.departure} (${flight.departureAirport} - ${flight.departureCode})\n`;
+        markdownMessage += `- **Đến:** ${flight.arrival} (${flight.arrivalAirport} - ${flight.arrivalCode})\n`;
+        markdownMessage += `- **Giờ khởi hành:** ${flight.departureTime}\n`;
+        markdownMessage += `- **Giờ đến:** ${flight.arrivalTime}\n`;
+        markdownMessage += `- **Giá vé:** ${flight.price}\n`;
+        markdownMessage += `- **Ghế trống:** ${flight.seats}\n\n`;
+      });
+
+      markdownMessage += `### 💡 Lưu ý:\n`;
+      markdownMessage += `- Giá vé có thể thay đổi tùy thời điểm đặt\n`;
+      markdownMessage += `- Vui lòng kiểm tra lại trước khi đặt vé\n`;
+      markdownMessage += `- Liên hệ hotline để được tư vấn thêm\n`;
+    }
+
+    return {
+      type: "flights",
+      message: markdownMessage,
+      data: flights,
+    };
+  } catch (error) {
+    console.error("❌ Database error:", error);
+    return {
+      type: "text",
+      message: "Xin lỗi, có lỗi khi tìm kiếm chuyến bay. Vui lòng thử lại sau.",
+      data: [],
+    };
+  }
 }
 
-module.exports = {
-  buildSmartContext,
-};
+module.exports = { buildSmartContext };

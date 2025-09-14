@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Test - AirsKy</title>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.error {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: black;
+        }
+
+        .message-input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-size: 16px;
+        }
+
+        .log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .log pre {
+            margin: 5px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 3px;
+            border-left: 4px solid #007bff;
+        }
+
+        .response {
+            background: #e7f3ff;
+            border-left-color: #007bff;
+        }
+
+        .error {
+            background: #ffeaea;
+            border-left-color: #dc3545;
+        }
+
+        .info {
+            background: #fffbe6;
+            border-left-color: #ffc107;
+        }
+
+        .test-messages {
+            margin: 20px 0;
+        }
+
+        .test-messages h3 {
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        .test-btn {
+            margin: 5px;
+            padding: 8px 15px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🛩️ AirsKy Chatbot Test</h1>
+
+        <div id="status" class="status disconnected">🔌 Chưa kết nối</div>
+
+        <div class="controls">
+            <button id="connectBtn" class="btn-primary" onclick="connect()">🔗 Kết nối</button>
+            <button id="disconnectBtn" class="btn-danger" onclick="disconnect()" disabled>🔌 Ngắt kết nối</button>
+        </div>
+
+        <div class="test-messages">
+            <h3>📝 Test Messages:</h3>
+            <button class="btn-success test-btn"
+                onclick="sendTestMessage('Tôi muốn tìm chuyến bay từ Sài Gòn đến Hà Nội')">Sài Gòn -> Hà Nội</button>
+
+            <button class="btn-success test-btn" onclick="sendTestMessage('Giá vé máy bay rẻ nhất từ TP.HCM')">TP.HCM
+                giá rẻ</button>
+            <button class="btn-success test-btn" onclick="sendTestMessage('Hello')">Hello</button>
+        </div>
+
+        <input type="text" id="customMessage" class="message-input" placeholder="Nhập tin nhắn tùy chỉnh..."
+            onkeypress="handleKeyPress(event)">
+        <button class="btn-warning" onclick="sendCustomMessage()">📤 Gửi tin nhắn</button>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        let socket;
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const logEl = document.getElementById('log');
+
+        function updateStatus(message, type = 'info') {
+            statusEl.textContent = message;
+            statusEl.className = `status ${type}`;
+        }
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('vi-VN');
+            const logEntry = document.createElement('pre');
+            logEntry.className = type;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(logEntry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function connect() {
+            if (socket && socket.connected) {
+                log('⚠️ Đã kết nối rồi!');
+                return;
+            }
+
+            updateStatus('🔄 Đang kết nối...', 'info');
+            socket = io('http://localhost:3000');
+
+            socket.on('connect', () => {
+                updateStatus('✅ Đã kết nối thành công', 'connected');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                log('✅ Kết nối thành công đến server');
+            });
+
+            socket.on('disconnect', () => {
+                updateStatus('🔌 Đã ngắt kết nối', 'disconnected');
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                log('🔌 Đã ngắt kết nối từ server');
+            });
+
+            socket.on('chat_response', (data) => {
+                log(`📥 Chat Response:
+Message: ${data.message}
+Context Type: ${data.context?.type || 'N/A'}
+Data Items: ${data.context?.data?.length || 0}
+Timestamp: ${data.timestamp}`, 'response');
+
+                if (data.context?.data && data.context.data.length > 0) {
+                    log(`📊 Sample Data: ${JSON.stringify(data.context.data[0], null, 2)}`, 'info');
+                }
+            });
+
+            socket.on('chat_history', (history) => {
+                log(`📚 Chat History: ${JSON.stringify(history, null, 2)}`, 'info');
+            });
+
+            socket.on('connect_error', (error) => {
+                updateStatus('❌ Lỗi kết nối', 'error');
+                log(`❌ Lỗi kết nối: ${error.message}`, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (socket) {
+                socket.disconnect();
+            }
+        }
+
+        function sendTestMessage(message) {
+            if (!socket || !socket.connected) {
+                log('❌ Chưa kết nối đến server!', 'error');
+                return;
+            }
+
+            const data = {
+                userId: 'test_user_' + Date.now(),
+                message: message
+            };
+
+            socket.emit('chat_message', data);
+            log(`📤 Gửi: ${JSON.stringify(data, null, 2)}`, 'info');
+        }
+
+        function sendCustomMessage() {
+            const messageInput = document.getElementById('customMessage');
+            const message = messageInput.value.trim();
+
+            if (!message) {
+                log('⚠️ Vui lòng nhập tin nhắn!', 'error');
+                return;
+            }
+
+            sendTestMessage(message);
+            messageInput.value = '';
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendCustomMessage();
+            }
+        }
+
+        // Auto-connect on page load (optional)
+        // connect();
+    </script>
+</body>
+
+</html>

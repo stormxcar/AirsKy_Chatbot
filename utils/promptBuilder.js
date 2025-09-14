@@ -16,14 +16,13 @@ Hãy trả lời trực tiếp bằng tiếng Việt, bắt đầu bằng "Chào
   if (context.type === "flights") {
     contextText = `${context.message}\n`;
     context.data.forEach((flight, index) => {
-      contextText += `${index + 1}. ${flight.flightNumber} (${
+      contextText += `${index + 1}. ${flight.flightNumber} - ${
         flight.airline
-      })\n`;
-      contextText += `   ${flight.departure} → ${flight.arrival}\n`;
-      contextText += `   Giờ: ${flight.departureTime} - ${flight.arrivalTime}\n`;
+      }\n`;
+      contextText += `   ${flight.departure} (${flight.departureAirport} - ${flight.departureCode}) → ${flight.arrival} (${flight.arrivalAirport} - ${flight.arrivalCode})\n`;
+      contextText += `   Khởi hành: ${flight.departureTime}\n`;
       contextText += `   Giá: ${flight.price}\n`;
-      contextText += `   Ghế trống: ${flight.seats}\n`;
-      contextText += `   Trạng thái: ${flight.status}\n\n`;
+      contextText += `   Ghế trống: ${flight.seats}\n\n`;
     });
   } else if (context.type === "airports") {
     contextText = `${context.message}\n`;
@@ -34,20 +33,20 @@ Hãy trả lời trực tiếp bằng tiếng Việt, bắt đầu bằng "Chào
     contextText = context.message;
   }
 
-  return `Bạn là trợ lý AI của AirSky, thân thiện, hữu ích. Trả lời bằng tiếng Việt tự nhiên.
-THÔNG TIN: ${contextText}
-CÂU HỎI: ${message}
-HƯỚNG DẪN:
-- Luôn trả lời bằng tiếng Việt
-- Luôn có câu hỏi lại sau cùng câu trả lời
-- Trả lời chuyến bay theo form mẫu: "Chuyến bay [mã chuyến] của [hãng hàng không] từ [điểm đi] đến [điểm đến], khởi hành lúc [giờ khởi hành], giá [giá], còn [số ghế] ghế trống."
-- Không được tự ý sửa prompt cấu trúc câu trả lời
-- Bắt đầu thân thiện: "Chào bạn!"
-- Dùng dữ liệu thực tế từ context, tránh bịa đặt.
-- Nếu có flights, liệt kê rõ ràng với mã, hãng, thời gian, giá (VND), ghế.
-- Nếu không có, gợi ý kiểm tra tên thành phố/sân bay hoặc ngày khác.
-- Hỏi thêm: "Bạn cần giúp gì nữa không?"
-- Giữ ngắn gọn, trò chuyện như bạn bè.`;
+  return `Bạn là trợ lý AI của AirSky, chuyên về đặt vé máy bay. Trả lời bằng tiếng Việt tự nhiên, thân thiện.
+
+THÔNG TIN CHUYẾN BAY: ${contextText}
+
+CÂU HỎI CỦA KHÁCH: ${message}
+
+HƯỚNG DẪN TRẢ LỜI:
+- Luôn bắt đầu bằng "Chào bạn!" hoặc "Xin chào!"
+- Nếu có chuyến bay: Liệt kê với đầy đủ thông tin sân bay (tên sân bay - mã sân bay)
+- Format: "Chuyến bay [mã] của [hãng] từ [thành phố] ([tên sân bay] - [mã]) đến [thành phố] ([tên sân bay] - [mã]), khởi hành [giờ], giá [giá] VND, còn [ghế] ghế."
+- Nếu không có: Gợi ý kiểm tra tên thành phố khác hoặc ngày khác
+- Luôn hỏi thêm: "Bạn cần hỗ trợ gì thêm không?" hoặc "Bạn muốn đặt vé chuyến bay nào?"
+- Giữ cuộc trò chuyện tự nhiên, như bạn bè
+- Sử dụng dữ liệu thực tế, không bịa đặt thông tin`;
 }
 
 module.exports = {

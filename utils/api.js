@@ -38,4 +38,4 @@ async function callAPI(prompt) {
   }
 }
 
-module.exports = { callGeminiAPI };
+module.exports = { callAPI };
