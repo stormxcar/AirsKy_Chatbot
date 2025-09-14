@@ -3,13 +3,12 @@ const axios = require("axios");
 const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
 const MISTRAL_API_KEY = "rfqO8m9lB8sx7FyUVs0Q7Y6mXxWCtaOt";
 
-// Hàm gọi API Mistral (thay thế cho Gemini để tiết kiệm rate limit)
-async function callGeminiAPI(prompt) {
+async function callAPI(prompt) {
   try {
     const response = await axios.post(
       MISTRAL_API_URL,
       {
-        model: "mistral-medium", // Có thể đổi thành "mistral-small" để tiết kiệm hơn
+        model: "mistral-medium", 
         messages: [
           {
             role: "user",
