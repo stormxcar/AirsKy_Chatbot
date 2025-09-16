@@ -52,13 +52,24 @@ function handleChatMessage(io, socket, dbPool) {
       );
       if (cannedResponse) {
         logger.info("📋 Using canned response for:", message);
-        socket.emit("chat_response", {
+
+        const response = {
           userId,
-          response: cannedResponse.message,
-          type: cannedResponse.type,
+          message: cannedResponse.message,
+          context: {
+            type: cannedResponse.type,
+            message: cannedResponse.message,
+          },
+          data: cannedResponse.data || null,
           timestamp: new Date().toISOString(),
           isCanned: true,
-        });
+        };
+
+        socket.emit("chat_response", response);
+        logger.info(
+          "📤 Emitted canned response with type:",
+          cannedResponse.type
+        );
         return;
       }
 
@@ -95,7 +106,7 @@ function handleChatMessage(io, socket, dbPool) {
           arrivalCode: flight.arrivalCode,
           departureTime: flight.departureTime,
           arrivalTime: flight.arrivalTime,
-          price: formatVietnamesePrice(flight.price),
+          price: flight.price, // Price already formatted in processFlightResults
         }));
 
         const responseMessage = `**Chào bạn!**\n\nTuyệt vời! Mình đã tìm thấy **${
@@ -108,10 +119,12 @@ function handleChatMessage(io, socket, dbPool) {
             : "ngày yêu cầu"
         }**.`;
 
-        socket.emit("chat_response", {
+        const response = {
           userId,
           message: responseMessage,
-          flights: formattedFlights, // Array of flight objects
+          data: {
+            flights: formattedFlights, // Array of flight objects
+          },
           context: {
             type: context.type,
             totalFlights: context.data.length,
@@ -123,11 +136,17 @@ function handleChatMessage(io, socket, dbPool) {
           },
           timestamp: new Date().toISOString(),
           isCanned: false,
-        });
+        };
+
+        socket.emit("chat_response", response);
         logger.info(
           "📤 Emitted flight response with",
           formattedFlights.length,
           "flights"
+        );
+        logger.info(
+          "📤 Full response data:",
+          JSON.stringify(response.data, null, 2)
         );
         return;
       }

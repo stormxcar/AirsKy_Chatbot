@@ -1,31 +1,57 @@
-const queries = require("./queries");
+const { getLangChainSQLManager } = require("./langchainSQL");
+
+// Global SQL Manager instance
+let sqlManager = null;
 
 // Cache cho data từ database
 let airlinesCache = [];
 let airportsCache = [];
 let isCacheLoaded = false;
 
-// Load data từ database
-async function loadDataFromDatabase(dbPool) {
+// Load data từ database using LangChain
+async function loadDataFromDatabase() {
   try {
     if (isCacheLoaded) return;
 
-    // Load airlines
-    const [airlines] = await dbPool.execute(queries.getAirlinesList);
-    airlinesCache = airlines.map((airline) => ({
-      id: airline.airline_id,
-      name: airline.airline_name,
-      code: airline.airline_code,
-    }));
+    // Initialize SQL Manager if not already done
+    if (!sqlManager) {
+      // Import dbPool from config
+      const dbConfig = require("../config/database");
+      sqlManager = getLangChainSQLManager(dbConfig);
+      await sqlManager.initialize();
+    }
 
-    // Load airports
-    const [airports] = await dbPool.execute(queries.getAirportsList);
-    airportsCache = airports.map((airport) => ({
-      id: airport.airport_id,
-      name: airport.airport_name,
-      code: airport.airport_code,
-      city: airport.city_name,
-    }));
+    // Load airlines using LangChain
+    const airlinesQuery =
+      "Get all airlines with their id, name, code, and thumbnail";
+    const airlinesResult = await sqlManager.executeNaturalLanguageQuery(
+      airlinesQuery,
+      { userId: "system", entities: {}, message: airlinesQuery }
+    );
+    if (airlinesResult.success) {
+      airlinesCache = airlinesResult.result.map((airline) => ({
+        id: airline.airline_id,
+        name: airline.airline_name,
+        code: airline.airline_code,
+        thumbnail: airline.thumbnail || null,
+      }));
+    }
+
+    // Load airports using LangChain
+    const airportsQuery =
+      "Get all airports with their id, name, code, and city name";
+    const airportsResult = await sqlManager.executeNaturalLanguageQuery(
+      airportsQuery,
+      { userId: "system", entities: {}, message: airportsQuery }
+    );
+    if (airportsResult.success) {
+      airportsCache = airportsResult.result.map((airport) => ({
+        id: airport.airport_id,
+        name: airport.airport_name,
+        code: airport.airport_code,
+        city: airport.city_name,
+      }));
+    }
 
     isCacheLoaded = true;
     console.log(
@@ -41,6 +67,12 @@ async function loadDataFromDatabase(dbPool) {
 
 // Tạo response cho airlines
 function generateAirlinesResponse() {
+  console.log(
+    "🔍 Generating airlines response, cache length:",
+    airlinesCache.length
+  );
+  console.log("🔍 Airlines cache:", airlinesCache.slice(0, 3)); // Log first 3 items
+
   if (airlinesCache.length === 0) {
     return {
       type: "text",
@@ -49,17 +81,49 @@ function generateAirlinesResponse() {
     };
   }
 
-  let message = "## ✈️ Các hãng hàng không hợp tác\n\n";
-  airlinesCache.forEach((airline, index) => {
+  const totalAirlines = airlinesCache.length;
+  const displayLimit = 10;
+  const airlinesToShow = airlinesCache.slice(0, displayLimit);
+  const hasMore = totalAirlines > displayLimit;
+
+  let message = `## ✈️ Các hãng hàng không hợp tác\n\n`;
+  airlinesToShow.forEach((airline, index) => {
     message += `${index + 1}. **${airline.name} (${airline.code})**\n`;
   });
 
-  message += "\n*Liên hệ chúng tôi để được tư vấn hãng phù hợp nhất!*";
-  return { type: "text", message };
+  if (hasMore) {
+    message += `\n*... và ${
+      totalAirlines - displayLimit
+    } hãng khác. Liên hệ chúng tôi để được tư vấn thêm!*`;
+  } else {
+    message += `\n*Liên hệ chúng tôi để được tư vấn hãng phù hợp nhất!*`;
+  }
+
+  const response = {
+    type: "airlines",
+    message: message,
+    data: {
+      airlines: airlinesToShow,
+      total: totalAirlines,
+      hasMore: hasMore,
+    },
+  };
+
+  console.log(
+    "📤 Generated airlines response:",
+    JSON.stringify(response, null, 2)
+  );
+  return response;
 }
 
 // Tạo response cho airports
 function generateAirportsResponse() {
+  console.log(
+    "🔍 Generating airports response, cache length:",
+    airportsCache.length
+  );
+  console.log("🔍 Airports cache:", airportsCache.slice(0, 3)); // Log first 3 items
+
   if (airportsCache.length === 0) {
     return {
       type: "text",
@@ -68,27 +132,41 @@ function generateAirportsResponse() {
     };
   }
 
-  // Group airports by city
-  const airportsByCity = {};
-  airportsCache.forEach((airport) => {
-    if (!airportsByCity[airport.city]) {
-      airportsByCity[airport.city] = [];
-    }
-    airportsByCity[airport.city].push(airport);
+  const totalAirports = airportsCache.length;
+  const displayLimit = 10;
+  const airportsToShow = airportsCache.slice(0, displayLimit);
+  const hasMore = totalAirports > displayLimit;
+
+  let message = `## 🏢 Danh sách sân bay chính\n\n`;
+  airportsToShow.forEach((airport, index) => {
+    message += `${index + 1}. **${airport.name} (${airport.code})** - ${
+      airport.city
+    }\n`;
   });
 
-  let message = "## 🏢 Danh sách sân bay chính\n\n";
-  Object.keys(airportsByCity)
-    .sort()
-    .forEach((city) => {
-      message += `**${city}:**\n`;
-      airportsByCity[city].forEach((airport) => {
-        message += `  - ${airport.name} (${airport.code})\n`;
-      });
-      message += "\n";
-    });
+  if (hasMore) {
+    message += `\n*... và ${
+      totalAirports - displayLimit
+    } sân bay khác. Liên hệ chúng tôi để được tư vấn thêm!*`;
+  } else {
+    message += `\n*Liên hệ chúng tôi để được tư vấn về các sân bay!*`;
+  }
 
-  return { type: "text", message };
+  const response = {
+    type: "airports",
+    message: message,
+    data: {
+      airports: airportsToShow,
+      total: totalAirports,
+      hasMore: hasMore,
+    },
+  };
+
+  console.log(
+    "📤 Generated airports response:",
+    JSON.stringify(response, null, 2)
+  );
+  return response;
 }
 
 const cannedResponses = [
@@ -338,16 +416,27 @@ async function findCannedResponse(message, dbPool) {
     );
 
     if (hasMatch) {
+      console.log("🎯 Found canned response match for:", message);
+      console.log("🎯 Response type:", item.response);
+
       // Nếu là dynamic response, gọi generator function
       if (item.response === "dynamic" && item.generator) {
+        console.log("🔄 Calling generator function:", item.generator.name);
         // Load data từ database nếu chưa load
         if (dbPool && !isCacheLoaded) {
+          console.log("📥 Loading data from database...");
           await loadDataFromDatabase(dbPool);
         }
-        return item.generator();
+        const result = item.generator();
+        console.log("📤 Generator result:", JSON.stringify(result, null, 2));
+        return result;
       }
 
       // Trả về response tĩnh
+      console.log(
+        "📤 Static response:",
+        JSON.stringify(item.response, null, 2)
+      );
       return item.response;
     }
   }

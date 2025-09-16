@@ -15,6 +15,7 @@ const { initializeSocketHandlers } = require("./services/chatService");
 // Import utils
 const logger = require("./utils/logger");
 const { loadDataFromDatabase } = require("./utils/cannedResponses");
+const { initializeLangChainSQL } = require("./utils/langchainSQL");
 
 // Initialize Express app
 const app = express();
@@ -40,11 +41,14 @@ app.get("/test", (req, res) => {
   res.sendFile(__dirname + "/test.html");
 });
 
+// Initialize LangChain SQL Manager
+initializeLangChainSQL(dbConfig);
+
 // Initialize socket handlers
 initializeSocketHandlers(io, dbConfig);
 
 // Load canned response data from database
-loadDataFromDatabase(dbConfig)
+loadDataFromDatabase()
   .then(() => {
     logger.info("📋 Canned response data loaded successfully");
   })

@@ -1,12 +1,9 @@
 const axios = require("axios");
 
-const MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions";
-const MISTRAL_API_KEY = "rfqO8m9lB8sx7FyUVs0Q7Y6mXxWCtaOt";
-
 async function callAPI(prompt) {
   try {
     const response = await axios.post(
-      MISTRAL_API_URL,
+      process.env.MISTRAL_API_URL,
       {
         model: "mistral-medium", 
         messages: [
@@ -21,7 +18,7 @@ async function callAPI(prompt) {
       {
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${MISTRAL_API_KEY}`,
+          Authorization: `Bearer ${process.env.MISTRAL_API_KEY}`,
         },
       }
     );
