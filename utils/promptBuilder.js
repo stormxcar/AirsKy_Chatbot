@@ -1,101 +1,242 @@
-// utils/promptBuilder.js
 const logger = require("./logger");
 
+// Configuration for query types
+const queryTypesConfig = {
+  flight_search: {
+    keywords: [
+      "tìm chuyến bay",
+      "chuyến bay",
+      "bay từ",
+      "bay đến",
+      "đặt vé",
+      "giá vé",
+      "khởi hành",
+      "flight",
+      "book",
+      "reservation",
+      "khứ hồi",
+      "một chiều",
+      "round trip",
+      "one way",
+    ],
+    priorityEntities: ["departure", "arrival", "date"],
+  },
+  information: {
+    keywords: [
+      "thông tin",
+      "giới thiệu",
+      "mô tả",
+      "tỉnh",
+      "thành phố",
+      "địa điểm",
+      "du lịch",
+      "khách sạn",
+      "ẩm thực",
+      "đặc sản",
+      "lịch sử",
+      "văn hóa",
+      "thắng cảnh",
+      "biên giới",
+      "địa lý",
+      "dân số",
+      "kinh tế",
+      "cẩm nang",
+      "kinh nghiệm",
+      "hướng dẫn",
+    ],
+  },
+  booking: {
+    keywords: [
+      "đặt vé",
+      "mua vé",
+      "book vé",
+      "đặt chỗ",
+      "reservation",
+      "thanh toán",
+      "payment",
+      "pay",
+      "thẻ tín dụng",
+      "momo",
+      "zalopay",
+    ],
+  },
+  cancellation: {
+    keywords: [
+      "đổi vé",
+      "thay đổi vé",
+      "chỉnh sửa vé",
+      "hủy vé",
+      "chính sách",
+      "hoàn tiền",
+      "refund",
+      "trả tiền",
+      "hoàn lại",
+    ],
+  },
+  luggage: {
+    keywords: ["hành lý", "kiện", "valet", "cân nặng", "quá khổ"],
+  },
+  delay: {
+    keywords: [
+      "trễ chuyến",
+      "delay",
+      "hoãn chuyến",
+      "bồi thường",
+      "compensation",
+    ],
+  },
+  airline: {
+    keywords: [
+      "hãng hàng không",
+      "airline",
+      "vietnam airlines",
+      "vietjet",
+      "bamboo",
+    ],
+  },
+  airport: {
+    keywords: ["sân bay", "airport", "danh sách sân bay", "các sân bay"],
+  },
+  country: {
+    keywords: [
+      "quốc gia",
+      "countries",
+      "điểm đến quốc tế",
+      "du lịch nước ngoài",
+    ],
+  },
+  travel_class: {
+    keywords: [
+      "hạng vé",
+      "travel class",
+      "economy",
+      "business",
+      "first class",
+      "phổ thông",
+      "thương gia",
+    ],
+  },
+  blog: {
+    keywords: [
+      "blog",
+      "tin tức",
+      "bài viết",
+      "cẩm nang",
+      "hướng dẫn",
+      "kinh nghiệm",
+    ],
+  },
+  deal: {
+    keywords: ["khuyến mãi", "deals", "giảm giá", "ưu đãi", "sale", "discount"],
+  },
+  aircraft: {
+    keywords: ["máy bay", "aircraft", "phi cơ", "loại máy bay"],
+  },
+  gate: {
+    keywords: ["cửa ra máy bay", "gate", "cửa khởi hành", "boarding gate"],
+  },
+  contact: {
+    keywords: ["liên hệ", "hotline", "phone", "điện thoại", "support"],
+  },
+  working_hours: {
+    keywords: ["giờ làm việc", "giờ mở cửa", "thời gian hoạt động", "giờ bay"],
+  },
+  general: {
+    // Default fallback
+    keywords: [],
+  },
+};
+
 /**
- * Detect query type based on message content
+ * Detect query type based on message content and entities
  */
 function detectQueryType(message, entities = {}) {
-  const lowerMessage = message.toLowerCase();
+  const lowerMessage = message.toLowerCase().trim();
 
-  // Flight search keywords
-  const flightKeywords = [
-    "tìm chuyến bay",
-    "chuyến bay",
-    "bay từ",
-    "bay đến",
-    "đặt vé",
-    "giá vé",
-    "khởi hành",
-    "flight",
-    "book",
-    "reservation",
-  ];
-
-  // Information/general keywords
-  const infoKeywords = [
-    "thông tin",
-    "giới thiệu",
-    "mô tả",
-    "tỉnh",
-    "thành phố",
-    "địa điểm",
-    "du lịch",
-    "khách sạn",
-    "ẩm thực",
-    "đặc sản",
-    "lịch sử",
-    "văn hóa",
-    "thắng cảnh",
-    "biên giới",
-    "địa lý",
-    "dân số",
-    "kinh tế",
-  ];
-
-  // Check for flight search
-  const hasFlightKeywords = flightKeywords.some((keyword) =>
-    lowerMessage.includes(keyword)
-  );
-
-  // Check for information query
-  const hasInfoKeywords = infoKeywords.some((keyword) =>
-    lowerMessage.includes(keyword)
-  );
-
-  // If has entities (departure/arrival), likely flight search
-  if (entities.departure || entities.arrival) {
-    return "flight_search";
+  // Check for entity-based priority (e.g., flight if departure/arrival present)
+  for (const [type, config] of Object.entries(queryTypesConfig)) {
+    if (
+      config.priorityEntities &&
+      config.priorityEntities.some((ent) => entities[ent])
+    ) {
+      logger.info(`🤖 Detected query type via entities: ${type}`);
+      return type;
+    }
   }
 
-  // If explicit flight keywords, flight search
-  if (hasFlightKeywords) {
-    return "flight_search";
+  // Check keywords
+  for (const [type, config] of Object.entries(queryTypesConfig)) {
+    if (
+      config.keywords.some((keyword) =>
+        lowerMessage.includes(keyword.toLowerCase())
+      )
+    ) {
+      logger.info(`🤖 Detected query type via keywords: ${type}`);
+      return type;
+    }
   }
 
-  // If information keywords, information query
-  if (hasInfoKeywords) {
-    return "information";
-  }
-
-  // Default to general conversation
+  logger.info(`🤖 Default query type: general`);
   return "general";
 }
 
 /**
- * Build rich context for information queries
+ * Build rich context for specific query types
  */
-function buildInformationContext(message, entities = {}) {
-  let context = "";
+function buildContext(queryType, message, entities = {}, context = {}) {
+  let builtContext = "";
 
-  // Extract location from message or entities
-  const locationMatch = message.match(
-    /(?:tỉnh|thành phố|địa điểm)?\s*([A-ZÀ-Ỹ][a-zà-ỹ\s]+)(?:là|thế nào|có gì|như thế nào|ra sao)/i
-  );
-  const location = locationMatch
-    ? locationMatch[1].trim()
-    : entities.arrival || entities.departure || null;
-
-  if (location) {
-    context += `## 📍 Thông tin về ${location}\n\n`;
-    context += `Người dùng đang hỏi về thông tin địa điểm: ${location}\n\n`;
-    context += `Hãy cung cấp thông tin hữu ích về ${location} bao gồm:\n`;
-    context += `- Mô tả tổng quan về địa điểm\n`;
-    context += `- Các điểm tham quan nổi tiếng\n`;
-    context += `- Đặc sản địa phương\n`;
-    context += `- Thông tin du lịch hữu ích\n\n`;
+  switch (queryType) {
+    case "information":
+      const locationMatch = message.match(
+        /(?:tỉnh|thành phố|địa điểm)?\s*([A-ZÀ-Ỹ][a-zà-ỹ\s]+)(?:là|thế nào|có gì|như thế nào|ra sao)/i
+      );
+      const location = locationMatch
+        ? locationMatch[1].trim()
+        : entities.arrival || entities.departure || null;
+      if (location) {
+        builtContext += `## 📍 Thông tin về ${location}\n\n`;
+        builtContext += `Người dùng đang hỏi về: ${location}\n`;
+        builtContext += `Cung cấp: Tổng quan, điểm tham quan, đặc sản, thông tin du lịch.\n`;
+      }
+      break;
+    case "flight_search":
+      if (context.type === "flights") {
+        builtContext += `## ✈️ Kết quả chuyến bay\n`;
+        builtContext += `Loại: ${
+          entities.trip_type === "ROUND_TRIP" ? "Khứ hồi" : "Một chiều"
+        }\n`;
+        builtContext += `Tuyến: ${entities.departure || "N/A"} → ${
+          entities.arrival || "N/A"
+        }\n`;
+        builtContext += `Ngày đi: ${entities.date || "Chưa xác định"}\n`;
+        if (entities.trip_type === "ROUND_TRIP")
+          builtContext += `Ngày về: ${
+            entities.return_date || "Chưa xác định"
+          }\n`;
+        builtContext += `Số chuyến: ${context.data?.length || 0}\n\n`;
+        context.data?.forEach((flight, i) => {
+          builtContext += `${i + 1}. ${flight.flightNumber} - ${
+            flight.airline
+          }\n`;
+          builtContext += `Từ: ${flight.departure} (${flight.departureAirport} - ${flight.departureCode})\n`;
+          builtContext += `Đến: ${flight.arrival} (${flight.arrivalAirport} - ${flight.arrivalCode})\n`;
+          builtContext += `Khởi hành: ${flight.departureTime}, Đến: ${flight.arrivalTime}\n`;
+          builtContext += `Giá: ${flight.price} VND, Ghế: ${flight.seats}\n\n`;
+        });
+      } else if (context.type === "airports") {
+        builtContext += `## 🏢 Danh sách sân bay\n`;
+        context.data?.airports?.forEach((airport) => {
+          builtContext += `- ${airport.airport_name} (${airport.airport_code}) - ${airport.city_name}\n`;
+        });
+      }
+      break;
+    // Add cases for other types if needed, e.g., airline, airport, etc.
+    default:
+      builtContext = context.message || "";
   }
 
-  return context;
+  return builtContext;
 }
 
 /**
@@ -103,159 +244,115 @@ function buildInformationContext(message, entities = {}) {
  */
 function buildPrompt(message, context, entities = {}) {
   const queryType = detectQueryType(message, entities);
-  logger.info(`🤖 Detected query type: ${queryType}`);
+  const builtContext = buildContext(queryType, message, entities, context);
+  const dateStr = entities.date
+    ? new Date(entities.date).toLocaleDateString("vi-VN")
+    : "đó";
+  const location = entities.arrival || entities.departure || "địa điểm này";
 
-  const departureCity = entities.departure || null;
-  const arrivalCity = entities.arrival || null;
+  let basePrompt = `Bạn là trợ lý AI của AirSky, chuyên về du lịch và đặt vé máy bay Việt Nam. Trả lời bằng tiếng Việt tự nhiên, thân thiện, như bạn bè chia sẻ.
 
-  // Handle text context (no flight data)
-  if (context.type === "text") {
-    const dateStr = entities.date
-      ? new Date(entities.date).toLocaleDateString("vi-VN")
-      : "đó";
+THÔNG TIN HIỆN CÓ: ${builtContext}
 
-    if (queryType === "information") {
-      // Rich information query
-      const infoContext = buildInformationContext(message, entities);
-      return `Bạn là trợ lý AI của AirSky, chuyên về du lịch và đặt vé máy bay Việt Nam.
+CÂU HỎI: "${message}"
 
-${infoContext}
+QUAN TRỌNG VỀ THỜI GIAN:
+- NGÀY HIỆN TẠI LÀ: ${new Date().toLocaleDateString(
+    "vi-VN"
+  )} (${new Date().toLocaleDateString("vi-VN", {
+    year: "numeric",
+    month: "long",
+  })})
+- LUÔN SỬ DỤNG NĂM HIỆN TẠI HOẶC TƯƠNG LAI CHO CÁC NGÀY TƯƠNG LAI
+- Nếu đề cập "thứ hai tuần sau" → tính là ${new Date(
+    Date.now() + 7 * 24 * 60 * 60 * 1000
+  ).toLocaleDateString("vi-VN")}
+- Nếu đề cập "tuần sau" → tính từ ngày ${new Date().toLocaleDateString("vi-VN")}
+- Nếu đề cập "cuối tuần" → tính từ ngày ${new Date().toLocaleDateString(
+    "vi-VN"
+  )}
 
-CÂU HỎI CỦA KHÁCH: "${message}"
+QUAN TRỌNG VỀ NGUỒN THÔNG TIN:
+- CHỈ SỬ DỤNG DỮ LIỆU TỪ HỆ THỐNG AIRSKY - KHÔNG TÌM KIẾM BÊN NGOÀI
+- KHÔNG ĐỀ CẬP HOẶC GỠI Ý CÁC NỀN TẢNG ĐẶT VÉ KHÁC
+- KHÔNG TẠO LINK HOẶC HƯỚNG DẪN TRUY CẬP WEBSITE BÊN NGOÀI
+- Nếu không có thông tin: Xin lỗi và hướng dẫn liên hệ hotline hoặc kiểm tra lại
+- Tập trung hỗ trợ đặt vé qua hệ thống AirSky của chúng ta
 
-HƯỚNG DẪN TRẢ LỜI:
-- Bắt đầu bằng lời chào thân thiện: "Chào bạn!" hoặc "Xin chào bạn!"
-- Mô tả địa điểm một cách sinh động, hấp dẫn
-- Kết hợp thông tin du lịch với gợi ý về chuyến bay nếu phù hợp
-- Giữ giọng điệu thân thiện, như bạn bè chia sẻ kinh nghiệm du lịch
-- Nếu đề cập đến chuyến bay: "Nếu bạn muốn đi du lịch ${
-        entities.arrival || "địa điểm này"
-      }, mình có thể giúp tìm vé máy bay phù hợp nhé!"
-- Kết thúc bằng câu hỏi để tiếp tục cuộc trò chuyện: "Bạn có muốn biết thêm thông tin gì không?" hoặc "Mình có thể hỗ trợ gì thêm cho chuyến đi của bạn?"`;
-    }
+HƯỚNG DẪN: `;
 
-    return `Bạn là trợ lý AI của AirSky. Người dùng hỏi: "${message}"
-
-Thông tin hiện có: ${context.message}
-
-Hãy trả lời trực tiếp bằng tiếng Việt, bắt đầu bằng "Chào bạn!", giải thích rằng để tìm chuyến bay cần biết thành phố đi và đến, và hỏi cụ thể: "Bạn muốn bay từ thành phố nào đến thành phố nào vào ngày ${dateStr}?" Luôn có câu hỏi lại sau câu trả lời.`;
+  switch (queryType) {
+    case "flight_search":
+      basePrompt += `- CHỈ HIỂN THỊ CHUYẾN BAY TỪ HỆ THỐNG AIRSKY - KHÔNG ĐỀ CẬP CÁC HÃNG KHÁC
+- Nếu không có chuyến bay: Xin lỗi và gợi ý ngày khác hoặc liên hệ hotline 1900 XXX XXX
+- Không gợi ý tìm trên website Vietjet, Vietnam Airlines, hoặc các nền tảng khác
+- Không tạo link hoặc hướng dẫn truy cập website bên ngoài
+- Tập trung giới thiệu các chuyến bay có sẵn trong hệ thống AirSky
+- Sử dụng Markdown cho danh sách chuyến bay.
+- Nếu khứ hồi: Gợi ý chọn chuyến đi/về phù hợp.
+- Nếu cần thêm info: Hỏi "Bạn muốn bay từ thành phố nào đến thành phố nào vào ngày ${dateStr}?"
+- Kết thúc bằng: "Bạn muốn đặt vé nào?" hoặc "Cần hỗ trợ thêm không?"
+- Không bịa đặt dữ liệu.`;
+      break;
+    case "information":
+      basePrompt += `- Mô tả địa điểm sinh động: Tổng quan, tham quan, đặc sản, du lịch.
+- Kết hợp gợi ý chuyến bay: "Để đến ${location}, bạn có thể bay từ Tân Sơn Nhất hoặc Nội Bài."
+- Kết thúc bằng: "Bạn có kế hoạch du lịch không?" hoặc "Biết thêm gì không?"`;
+      break;
+    case "booking":
+      basePrompt += `- Hướng dẫn đặt vé: Online qua web/app, hotline.
+- Đề cập thanh toán: Thẻ, ví điện tử, tiền mặt.
+- Kết thúc bằng: "Bạn muốn đặt vé ngay không?"`;
+      break;
+    case "cancellation":
+      basePrompt += `- Giải thích chính sách đổi/hủy: Thời hạn, phí, điều kiện.
+- Kết thúc bằng: "Bạn cần hỗ trợ hủy vé cụ thể không?"`;
+      break;
+    case "luggage":
+      basePrompt += `- Quy định hành lý: Xách tay (7-10kg), ký gửi (20-30kg), cấm mang.
+- Kết thúc bằng: "Còn thắc mắc gì về hành lý?"`;
+      break;
+    case "delay":
+      basePrompt += `- Chính sách bồi thường: Thời gian trễ, mức hoàn tiền.
+- Kết thúc bằng: "Bạn đang gặp vấn đề trễ chuyến?"`;
+      break;
+    case "airline":
+    case "airport":
+    case "country":
+    case "travel_class":
+    case "blog":
+    case "deal":
+    case "aircraft":
+    case "gate":
+      basePrompt += `- Liệt kê thông tin từ dữ liệu có sẵn.
+- Nếu không có: Gợi ý tìm kiếm thêm.
+- Kết thúc bằng: "Bạn cần danh sách chi tiết hơn?"`;
+      break;
+    case "contact":
+      basePrompt += `- Cung cấp hotline, email, văn phòng.
+- Kết thúc bằng: "Bạn muốn liên hệ ngay?"`;
+      break;
+    case "working_hours":
+      basePrompt += `- Giờ làm việc sân bay chính: SGN, HAN, DAD.
+- Kết thúc bằng: "Còn sân bay nào bạn quan tâm?"`;
+      break;
+    default: // general
+      basePrompt += `- Trả lời chung, hỏi thêm chi tiết nếu cần.
+- Kết thúc bằng: "Mình có thể giúp gì thêm?"`;
   }
 
-  // Build context based on type
-  let contextText = "";
-  let promptType = "general";
+  basePrompt += `\n- CHỈ SỬ DỤNG THÔNG TIN TỪ HỆ THỐNG AIRSKY - KHÔNG TÌM KIẾM TỪ NGUỒN BÊN NGOÀI
+- Nếu không có thông tin trong hệ thống: Xin lỗi và gợi ý liên hệ hotline hoặc kiểm tra lại thông tin
+- Không đề cập hoặc gợi ý các nền tảng đặt vé khác (Vietjet, Vietnam Airlines website, etc.)
+- Không tạo link hoặc hướng dẫn click sang website khác
+- Tập trung vào việc hỗ trợ đặt vé qua hệ thống AirSky của chúng ta
+- Giữ cuộc trò chuyện hấp dẫn, luôn hỏi lại để tiếp tục.`;
 
-  if (context.type === "flights") {
-    promptType = "flight_results";
-    contextText = `## ✈️ Kết quả tìm kiếm chuyến bay\n\n`;
-    contextText += `**Loại chuyến bay:** ${
-      entities.trip_type === "ROUND_TRIP" ? "Khứ hồi" : "Một chiều"
-    }\n`;
-    contextText += `**Tuyến bay:** ${departureCity || "N/A"} → ${
-      arrivalCity || "N/A"
-    }\n`;
-
-    if (entities.trip_type === "ROUND_TRIP") {
-      contextText += `**Ngày đi:** ${entities.date || "Chưa xác định"}\n`;
-      if (entities.return_date) {
-        contextText += `**Ngày về:** ${entities.return_date}\n`;
-      }
-      contextText += `\n`;
-    } else {
-      contextText += `**Ngày bay:** ${entities.date || "Chưa xác định"}\n\n`;
-    }
-
-    contextText += `**Số chuyến bay tìm thấy:** ${context.data.length}\n\n`;
-
-    if (context.data.length > 0) {
-      contextText += `### 📋 Danh sách chuyến bay:\n\n`;
-      context.data.forEach((flight, index) => {
-        contextText += `**${index + 1}. ${flight.flightNumber}** - ${
-          flight.airline
-        }\n`;
-        contextText += `- **Từ:** ${flight.departure} (${flight.departureAirport} - ${flight.departureCode})\n`;
-        contextText += `- **Đến:** ${flight.arrival} (${flight.arrivalAirport} - ${flight.arrivalCode})\n`;
-        contextText += `- **Giờ khởi hành:** ${flight.departureTime}\n`;
-        contextText += `- **Giờ đến:** ${flight.arrivalTime}\n`;
-        contextText += `- **Giá vé:** ${flight.price}\n`;
-        contextText += `- **Ghế trống:** ${flight.seats}\n\n`;
-      });
-    }
-  } else if (context.type === "airports") {
-    promptType = "airport_info";
-    contextText = `${context.message}\n`;
-    context.data.forEach((airport) => {
-      contextText += `- ${airport.name} (${airport.code}) - ${airport.city}\n`;
-    });
-  } else {
-    contextText = context.message;
-  }
-
-  // Enhanced prompts based on query type and context
-  if (queryType === "information" && context.type === "flights") {
-    // Information query with flight results - combine both
-    const infoContext = buildInformationContext(message, entities);
-    return `Bạn là trợ lý AI của AirSky, chuyên về du lịch và đặt vé máy bay Việt Nam.
-
-${infoContext}
-
-THÔNG TIN CHUYẾN BAY TÌM THẤY: ${contextText}
-
-CÂU HỎI CỦA KHÁCH: "${message}"
-
-HƯỚNG DẪN TRẢ LỜI:
-- Bắt đầu bằng lời chào thân thiện và giới thiệu về địa điểm
-- Mô tả địa điểm một cách sinh động, hấp dẫn
-- Chuyển tiếp tự nhiên sang thông tin chuyến bay: "Ngoài ra, mình cũng tìm được một số chuyến bay đến ${
-      arrivalCity || "địa điểm này"
-    } phù hợp với lịch trình của bạn:"
-- Liệt kê chuyến bay với format rõ ràng, dễ đọc
-- Kết hợp thông tin du lịch với practical advice về đi lại
-- Giữ giọng điệu thân thiện, chuyên nghiệp
-- Kết thúc bằng câu hỏi: "Bạn muốn đặt vé chuyến bay nào?" hoặc "Mình có thể hỗ trợ gì thêm cho chuyến đi của bạn?"`;
-  }
-
-  if (queryType === "information") {
-    // Pure information query
-    const infoContext = buildInformationContext(message, entities);
-    return `Bạn là trợ lý AI của AirSky, chuyên về du lịch và đặt vé máy bay Việt Nam.
-
-${infoContext}
-
-CÂU HỎI CỦA KHÁCH: "${message}"
-
-HƯỚNG DẪN TRẢ LỜI:
-- Bắt đầu bằng lời chào thân thiện
-- Cung cấp thông tin phong phú về địa điểm
-- Gợi ý về du lịch, ăn uống, tham quan
-- Nếu phù hợp, đề cập đến việc đi lại bằng máy bay: "Để đến ${
-      entities.arrival || "địa điểm này"
-    }, bạn có thể bay từ các sân bay lớn như Tân Sơn Nhất, Nội Bài..."
-- Giữ cuộc trò chuyện tự nhiên, hấp dẫn
-- Kết thúc bằng câu hỏi để tiếp tục: "Bạn có kế hoạch du lịch đến đây không?"`;
-  }
-
-  // Default flight/general response
-  return `Bạn là trợ lý AI của AirSky, chuyên về đặt vé máy bay. Trả lời bằng tiếng Việt tự nhiên, thân thiện.
-
-THÔNG TIN CHUYẾN BAY: ${contextText}
-
-CÂU HỎI CỦA KHÁCH: ${message}
-
-HƯỚNG DẪN TRẢ LỜI:
-- Sử dụng format Markdown cho chuyến bay (giống như thông tin cung cấp)
-- Nếu là vé khứ hồi: Đề cập rõ "Đây là các chuyến bay khứ hồi" và giải thích về ngày đi/ngày về
-- Nếu có chuyến bay: Liệt kê với đầy đủ thông tin sân bay (tên sân bay - mã sân bay)
-- Format: "**Chuyến bay [mã]** của **[hãng]** từ **[thành phố]** (**[tên sân bay]** - **[mã]**) đến **[thành phố]** (**[tên sân bay]** - **[mã]**), khởi hành **[giờ]**, giá **[giá]** VND, còn **[ghế]** ghế."
-- Cho khứ hồi: Gợi ý chọn chuyến bay đi và chuyến bay về phù hợp
-- Nếu không có: Gợi ý kiểm tra tên thành phố khác hoặc ngày khác
-- Luôn hỏi thêm: "Bạn cần hỗ trợ gì thêm không?" hoặc "Bạn muốn đặt vé chuyến bay nào?"
-- Giữ cuộc trò chuyện tự nhiên, như bạn bè
-- Sử dụng dữ liệu thực tế, không bịa đặt thông tin`;
+  return basePrompt;
 }
 
 module.exports = {
   buildPrompt,
   detectQueryType,
-  buildInformationContext,
+  buildContext,
 };

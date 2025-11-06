@@ -6,6 +6,8 @@ const { callAPI } = require("../utils/api");
 const { findCannedResponse } = require("../utils/cannedResponses");
 const { errors } = require("../config/errors");
 const logger = require("../utils/logger");
+const { getLangChainSQLManager } = require("../utils/langchainSQL");
+const { getFlightResponseTemplate } = require("../utils/responseTemplate");
 
 /**
  * Format price in Vietnamese currency
@@ -94,60 +96,79 @@ function handleChatMessage(io, socket, dbPool) {
       ) {
         logger.info("✈️ Found flights, building structured JSON response");
 
-        // Format flights data with Vietnamese price formatting
-        const formattedFlights = context.data.map((flight) => ({
-          flightId: flight.flightId,
-          flightNumber: flight.flightNumber,
-          airline: flight.airline,
-          tripType: flight.tripType,
-          departureAirport: flight.departureAirport,
-          departureCode: flight.departureCode,
-          arrivalAirport: flight.arrivalAirport,
-          arrivalCode: flight.arrivalCode,
-          departureTime: flight.departureTime,
-          arrivalTime: flight.arrivalTime,
-          price: flight.price, // Price already formatted in processFlightResults
-        }));
-
-        const responseMessage = `**Chào bạn!**\n\nTuyệt vời! Mình đã tìm thấy **${
-          context.data.length
-        } chuyến bay** từ **${entities.departure || "N/A"}** đến **${
-          entities.arrival || "N/A"
-        }** vào **${
-          entities.date
-            ? new Date(entities.date).toLocaleDateString("vi-VN")
-            : "ngày yêu cầu"
-        }**.`;
-
-        const response = {
-          userId,
-          message: responseMessage,
-          data: {
-            flights: formattedFlights, // Array of flight objects
+        // Use template response instead of raw data
+        const flightData = {
+          flights: context.data,
+          tripType: entities.tripType || "ONE_WAY",
+          searchCriteria: {
+            departure: entities.departure,
+            arrival: entities.arrival,
+            date: entities.date,
+            passengers: entities.passengers || 1,
           },
-          context: {
-            type: context.type,
-            totalFlights: context.data.length,
-            searchCriteria: {
-              departure: entities.departure,
-              arrival: entities.arrival,
-              date: entities.date,
-            },
-          },
-          timestamp: new Date().toISOString(),
-          isCanned: false,
         };
 
-        socket.emit("chat_response", response);
-        logger.info(
-          "📤 Emitted flight response with",
-          formattedFlights.length,
-          "flights"
-        );
-        logger.info(
-          "📤 Full response data:",
-          JSON.stringify(response.data, null, 2)
-        );
+        try {
+          const templateResponse = getFlightResponseTemplate().buildResponse(
+            flightData,
+            {
+              userId,
+              originalMessage: message,
+              entities,
+            }
+          );
+
+          const response = {
+            userId,
+            response: templateResponse, // Use template response structure
+            timestamp: new Date().toISOString(),
+            isCanned: false,
+          };
+
+          socket.emit("chat_response", response);
+          logger.info(
+            "📤 Emitted template flight response with",
+            templateResponse.flights?.length || 0,
+            "flights"
+          );
+          logger.info("📤 Template response type:", templateResponse.type);
+        } catch (templateError) {
+          logger.error("❌ Error building template response:", templateError);
+          // Fallback to raw data response
+          const formattedFlights = context.data.map((flight) => ({
+            flightId: flight.flightId,
+            flightNumber: flight.flightNumber,
+            airline: flight.airline,
+            tripType: flight.tripType,
+            departureAirport: flight.departureAirport,
+            departureCode: flight.departureCode,
+            arrivalAirport: flight.arrivalAirport,
+            arrivalCode: flight.arrivalCode,
+            departureTime: flight.departureTime,
+            arrivalTime: flight.arrivalTime,
+            price: flight.price,
+          }));
+
+          const response = {
+            userId,
+            message: `Tìm thấy ${context.data.length} chuyến bay từ ${
+              entities.departure || "N/A"
+            } đến ${entities.arrival || "N/A"}`,
+            data: {
+              flights: formattedFlights,
+            },
+            context: {
+              type: context.type,
+              totalFlights: context.data.length,
+            },
+            timestamp: new Date().toISOString(),
+            isCanned: false,
+          };
+
+          socket.emit("chat_response", response);
+          logger.info("📤 Emitted fallback flight response");
+        }
+
         return;
       }
 
@@ -235,10 +256,62 @@ function initializeSocketHandlers(io, dbPool) {
   });
 }
 
+/**
+ * Process flight query with professional response formatting
+ * @param {string} message - User's flight query message
+ * @param {string} userId - User ID
+ * @param {Object} dbPool - Database connection pool
+ * @returns {Promise<Object>} Professional flight response
+ */
+async function processFlightQuery(message, userId = null, dbPool) {
+  try {
+    logger.info(`Processing flight query: ${message}`);
+
+    // Get LangChain SQL Manager instance
+    const sqlManager = getLangChainSQLManager(dbPool);
+
+    // Execute flight search with professional response formatting
+    const result = await sqlManager.executeFlightSearchQuery(message, {
+      userId,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (result.success) {
+      logger.info(
+        `Flight search successful: ${result.metadata.flightCount} flights found`
+      );
+      return {
+        success: true,
+        response: result.response,
+        metadata: result.metadata,
+      };
+    } else {
+      logger.warn(`Flight search failed: ${result.error}`);
+      return {
+        success: false,
+        response: result.response,
+        error: result.error,
+        metadata: result.metadata,
+      };
+    }
+  } catch (error) {
+    logger.error("Error processing flight query:", error);
+
+    // Return professional error response
+    const template = getFlightResponseTemplate();
+    return {
+      success: false,
+      response: template.buildResponse({}, { originalQuery: message }),
+      error: error.message,
+    };
+  }
+}
+
 module.exports = {
   initializeSocketHandlers,
   handleChatMessage,
   handleJoin,
   handleDisconnect,
   formatVietnamesePrice,
+  processFlightQuery,
 };

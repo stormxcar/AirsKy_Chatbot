@@ -44,15 +44,10 @@ AirSky_Chatbot/
 - **MySQL2** - Database driver
 - **Fuse.js** - Fuzzy search library
 
-### AI & NLP
-
-- **Mistral AI** - Entity extraction
-- **Gemini AI** - Chat response generation
-
 ### Database
 
 - **MySQL/Aiven** - Flight data storage
-- **Redis** - Caching (planned)
+- **Redis** - Caching
 
 ## 🚀 Cài đặt và chạy
 
