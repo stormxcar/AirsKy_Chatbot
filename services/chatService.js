@@ -99,24 +99,28 @@ function handleChatMessage(io, socket, dbPool) {
         // Use template response instead of raw data
         const flightData = {
           flights: context.data,
-          tripType: entities.tripType || "ONE_WAY",
+          tripType: entities.trip_type || "ONE_WAY",
           searchCriteria: {
             departure: entities.departure,
             arrival: entities.arrival,
             date: entities.date,
+            returnDate: entities.return_date,
             passengers: entities.passengers || 1,
           },
         };
 
         try {
-          const templateResponse = getFlightResponseTemplate().buildResponse(
-            flightData,
-            {
+          const templateResponse =
+            await getFlightResponseTemplate().buildResponse(flightData, {
               userId,
               originalMessage: message,
               entities,
-            }
-          );
+              departureCity: entities.departure,
+              arrivalCity: entities.arrival,
+              outboundDate: entities.date,
+              returnDate: entities.return_date,
+              passengers: entities.passengers || 1,
+            });
 
           const response = {
             userId,
@@ -175,6 +179,11 @@ function handleChatMessage(io, socket, dbPool) {
       // Build prompt for other cases
       const prompt = buildPrompt(message, context, entities);
       logger.debug("🤖 Generated prompt length:", prompt.length);
+      logger.debug("🤖 Generated prompt type:", typeof prompt);
+      logger.debug(
+        "🤖 Generated prompt preview:",
+        prompt.substring(0, 200) + "..."
+      );
 
       // Call AI API
       const aiResponse = await callAPI(prompt);

@@ -91,7 +91,47 @@ const EXTRACT_ENTITIES_PROMPT = `
   - VÍ DỤ: "SGN đến HAN" → departure: "SGN", arrival: "HAN", trip_type: "ONE_WAY", stops: null
   - VÍ DỤ: "khứ hồi từ Sài Gòn ra Hà Nội" → trip_type: "ROUND_TRIP", stops: null
   - VÍ DỤ: "đi về từ Đà Nẵng ngày 1/6 về 5/6" → date: "2025-06-01", return_date: "2025-06-05", trip_type: "ROUND_TRIP", stops: null (năm hiện tại sẽ được sử dụng nếu không chỉ định)
-  - VÍ DỤ: "khứ hồi từ Sài Gòn ra Hà Nội vào ngày 29 tháng 9 và ngày về là ngày 3 tháng 10" → date: "2025-09-29", return_date: "2025-10-03", trip_type: "ROUND_TRIP", stops: null
+    - VÍ DỤ: "khứ hồi từ Sài Gòn ra Hà Nội vào ngày 29 tháng 9 và ngày về là ngày 3 tháng 10" → date: "2025-09-29", return_date: "2025-10-03", trip_type: "ROUND_TRIP", stops: null
+  - VÍ DỤ: "đi về từ Đà Nẵng ngày 1/6 về 5/6" → date: "2025-06-01", return_date: "2025-06-05", trip_type: "ROUND_TRIP", stops: null
+  - VÍ DỤ: "chuyến bay khứ hồi ngày 15/10 về 20/10" → date: "2025-10-15", return_date: "2025-10-20", trip_type: "ROUND_TRIP", stops: null
+  - VÍ DỤ DỄ HIỂU RETURN DATE: "ngày về là ngày 3 tháng 10" = return_date: "2025-10-03"
+  - VÍ DỤ DỄ HIỂU RETURN DATE: "về ngày 5/6" = return_date: "2025-06-05"
+  - VÍ DỤ DỄ HIỂU RETURN DATE: "quay lại 10/7" = return_date: "2025-07-10"
+  - VÍ DỠ: "đi về 15/8" = return_date: "2025-08-15"
+  - VÍ DỤ: "chuyến bay ngày 1/6" → date: "2025-06-01", trip_type: "ONE_WAY", stops: null (sử dụng năm hiện tại nếu không chỉ định)
+  - VÍ DỤ: "từ Hà Nội đến Đà Nẵng có điểm dừng ở Phú Yên" → departure: "Hà Nội", arrival: "Đà Nẵng", stops: ["Phú Yên"], trip_type: "MULTI_CITY"
+  - VÍ DỤ: "Hanoi to Tokyo via Seoul" → departure: "Hanoi", arrival: "Tokyo", stops: ["Seoul"], trip_type: "MULTI_CITY"
+  - VÍ DỤ: "chuyến bay qua Dubai" → stops: ["Dubai"], trip_type: "MULTI_CITY"
+  - VÍ DỠ: "chuyến bay hôm nay" → date: null, trip_type: "ONE_WAY", stops: null (để hệ thống tự động sử dụng ngày hiện tại ${
+    new Date().toISOString().split("T")[0]
+  })
+  - VÍ DỠ: "chuyến bay cuối tuần" → date: null (để hệ thống tự động tính)
+  - VÍ DỠ: "thứ hai tuần sau" → date: null (để hệ thống tự động tính, sẽ là ${
+    new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]
+  })
+  - VÍ DỠ: "ba tuần sau" → date: null (để hệ thống tự động tính)
+  - QUAN TRỌNG: Với "hôm nay" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "ngày mai" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "cuối tuần" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ hai tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ ba tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ tư tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ năm tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ sáu tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "thứ bảy tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "chủ nhật tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "hai tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: Với "ba tuần sau" luôn để date = null, KHÔNG trả về date cụ thể
+  - QUAN TRỌNG: KHÔNG sử dụng ngày tháng năm cũ như 2024-10-04 , 2023-05-15, luôn để date = null cho từ khóa đặc biệt
+  - QUAN TRỌNG: KHÔNG TỰ Ý TÍNH TOÁN NGÀY THÁNG, luôn để hệ thống xử lý
+  - QUAN TRỌNG: Luôn sử dụng năm hiện tại 2025 nếu user không chỉ định năm trong date. Ví dụ: "ngày 1/6" → sử dụng năm hiện tại 2025
+  - TỪ KHÓA KHỨ HỒI: "khứ hồi", "đi về", "round trip", "return", "về lại", "quay lại"
+  - TỪ KHÓA ĐA THÀNH PHỐ: "đa thành phố", "multi-city", "connecting", "có điểm dừng", "dừng ở", "qua", "trung chuyển"
+  - Nếu có từ khóa đa thành phố hoặc điểm dừng → trip_type: "MULTI_CITY"
+  - Nếu có từ khóa khứ hồi → trip_type: "ROUND_TRIP"
+  - Nếu không có từ khóa đặc biệt → trip_type: "ONE_WAY"
+  - Nếu không có thông tin, trả về null
   - VÍ DỤ: "đi về từ Đà Nẵng ngày 1/6 về 5/6" → date: "2025-06-01", return_date: "2025-06-05", trip_type: "ROUND_TRIP", stops: null
   - VÍ DỤ: "chuyến bay khứ hồi ngày 15/10 về 20/10" → date: "2025-10-15", return_date: "2025-10-20", trip_type: "ROUND_TRIP", stops: null
   - VÍ DỤ DỄ HIỂU RETURN DATE: "ngày về là ngày 3 tháng 10" = return_date: "2025-10-03"
@@ -126,14 +166,13 @@ const EXTRACT_ENTITIES_PROMPT = `
   - QUAN TRỌNG: KHÔNG sử dụng ngày tháng năm cũ như 2024-10-04 , 2023-05-15, luôn để date = null cho từ khóa đặc biệt
   - QUAN TRỌNG: KHÔNG TỰ Ý TÍNH TOÁN NGÀY THÁNG, luôn để hệ thống xử lý
   - QUAN TRỌNG: Luôn sử dụng năm hiện tại 2025 nếu user không chỉ định năm trong date. Ví dụ: "ngày 1/6" → sử dụng năm hiện tại 2025
-  - TỪ KHÓA KHỨ HỒI: "khứ hồi", "đi về", "round trip", "return", "về lại", "quay lại"
-  - TỪ KHÓA ĐA THÀNH PHỐ: "đa thành phố", "multi-city", "connecting", "có điểm dừng", "dừng ở", "qua", "trung chuyển"
+  - TÌM SỐ HÀNH KHÁCH: Tìm số trước "người", "hành khách", "khách"
   - Nếu có từ khóa đa thành phố hoặc điểm dừng → trip_type: "MULTI_CITY"
   - Nếu có từ khóa khứ hồi → trip_type: "ROUND_TRIP"
   - Nếu không có từ khóa đặc biệt → trip_type: "ONE_WAY"
   - Nếu không có thông tin, trả về null
 
-  Trả lời CHỈ JSON, không có text khác: { "departure": "string|null", "arrival": "string|null", "date": "YYYY-MM-DD|null", "return_date": "YYYY-MM-DD|null", "trip_type": "ONE_WAY|ROUND_TRIP|MULTI_CITY", "stops": "array|null" }
+  Trả lời CHỈ JSON, không có text khác: { "departure": "string|null", "arrival": "string|null", "date": "YYYY-MM-DD|null", "return_date": "YYYY-MM-DD|null", "passengers": number, "trip_type": "ONE_WAY|ROUND_TRIP|MULTI_CITY", "stops": "array|null" }
 `;
 
 // Hàm kiểm tra ngày hợp lệ
@@ -338,30 +377,75 @@ function simpleExtractEntities(message) {
     stops: null,
   };
 
-  // Trích xuất departure và arrival
-  const tuIndex = lowerMessage.indexOf("từ");
-  if (tuIndex !== -1) {
-    const afterTu = message.substring(tuIndex + 3).trim();
-    const keywordPattern = /(đến|đi|sang|qua|ra|có)/i;
-    const keywordMatch = afterTu.match(keywordPattern);
+  // Trích xuất departure và arrival với nhiều patterns hơn
+  const departurePatterns = [
+    /từ\s+(.+?)\s+(?:đến|đi|vào|sang|qua|ra)/i,
+    /từ\s+(.+?)\s+(?:ngày|tháng|hôm|có)/i,
+    /đi\s+từ\s+(.+?)\s+(?:đến|vào)/i,
+    /chuyến\s+bay\s+từ\s+(.+?)\s+(?:đến|vào|đi)/i,
+  ];
 
-    if (keywordMatch) {
-      const keywordIndex = keywordMatch.index;
-      entities.departure = afterTu.substring(0, keywordIndex).trim();
+  for (const pattern of departurePatterns) {
+    const match = message.match(pattern);
+    if (match && match[1]) {
+      entities.departure = match[1].trim();
+      console.log(`📍 Extracted departure: ${entities.departure}`);
 
-      const afterKeyword = afterTu
-        .substring(keywordIndex + keywordMatch[0].length)
-        .trim();
-      const nextKeywordMatch = afterKeyword.match(
-        /(ngày|tháng|năm|hôm|trong|không|có\s+(điểm\s+dừng|chuyến\s+bay))/i
+      // Tìm arrival sau departure
+      const afterDeparture = message.substring(
+        message.indexOf(match[1]) + match[1].length
       );
-      entities.arrival = nextKeywordMatch
-        ? afterKeyword.substring(0, nextKeywordMatch.index).trim()
-        : afterKeyword.split(/\s+/).slice(0, 3).join(" ");
+      const arrivalPatterns = [
+        /(?:đến|vào|đi|sang|qua|ra)\s+(.+?)(?:\s+(?:ngày|tháng|hôm|có|không|$))/i,
+        /\s+(.+?)(?:\s+(?:ngày|tháng|hôm|có|không|$))/i,
+      ];
 
-      console.log(
-        `📍 Extracted route: ${entities.departure} → ${entities.arrival}`
-      );
+      for (const arrPattern of arrivalPatterns) {
+        const arrMatch = afterDeparture.match(arrPattern);
+        if (
+          arrMatch &&
+          arrMatch[1] &&
+          arrMatch[1].trim() !== entities.departure
+        ) {
+          entities.arrival = arrMatch[1].trim();
+          console.log(`📍 Extracted arrival: ${entities.arrival}`);
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  // Fallback: tìm "từ" và "đến/vào" cơ bản
+  if (!entities.departure || !entities.arrival) {
+    const tuIndex = lowerMessage.indexOf("từ");
+    if (tuIndex !== -1) {
+      const afterTu = message.substring(tuIndex + 3).trim();
+      const keywordPattern = /(đến|đi|sang|qua|ra|vào|có)/i;
+      const keywordMatch = afterTu.match(keywordPattern);
+
+      if (keywordMatch) {
+        const keywordIndex = keywordMatch.index;
+        if (!entities.departure) {
+          entities.departure = afterTu.substring(0, keywordIndex).trim();
+        }
+
+        const afterKeyword = afterTu
+          .substring(keywordIndex + keywordMatch[0].length)
+          .trim();
+        const nextKeywordMatch = afterKeyword.match(
+          /(ngày|tháng|năm|hôm|trong|không|có\s+(điểm\s+dừng|chuyến\s+bay))/i
+        );
+        if (!entities.arrival) {
+          entities.arrival = nextKeywordMatch
+            ? afterKeyword.substring(0, nextKeywordMatch.index).trim()
+            : afterKeyword.split(/\s+/).slice(0, 3).join(" ");
+        }
+
+        console.log(
+          `📍 Fallback extracted route: ${entities.departure} → ${entities.arrival}`
+        );
+      }
     }
   }
 
@@ -372,6 +456,10 @@ function simpleExtractEntities(message) {
     /(?:ngày\s+về\s+là\s+ngày\s+)(\d{1,2})\s*tháng\s*(\d{1,2})(?:\s*năm\s*(\d{4}))?/i,
     /(\d{1,2})\/(\d{1,2})\s+về\s+(\d{1,2})\/(\d{1,2})/i,
     /(?:và\s+ngày\s+về\s+là\s+ngày\s+|và\s+về\s+ngày\s+)(\d{1,2})\s*tháng\s*(\d{1,2})/i,
+    /(?:ngày\s+về\s+là\s+)(\d{1,2})\s*tháng\s*(\d{1,2})/i,
+    /(?:về\s+ngày\s+)(\d{1,2})\/(\d{1,2})/i,
+    /(?:quay\s+lại\s+)(\d{1,2})\/(\d{1,2})/i,
+    /(?:đi\s+về\s+)(\d{1,2})\/(\d{1,2})/i,
   ];
 
   for (const pattern of returnDatePatterns) {
@@ -462,7 +550,7 @@ function simpleExtractEntities(message) {
     }
   }
 
-  // Xử lý khứ hồi
+  // Xử lý khứ hồi - nhưng luôn đặt là ONE_WAY cho chatbot
   const roundTripKeywords = [
     "khứ hồi",
     "đi về",
@@ -472,8 +560,23 @@ function simpleExtractEntities(message) {
     "quay lại",
   ];
   if (roundTripKeywords.some((keyword) => lowerMessage.includes(keyword))) {
-    entities.trip_type = "ROUND_TRIP";
-    console.log("🔄 Detected round-trip trip type");
+    entities.trip_type = "ONE_WAY"; // Luôn là ONE_WAY cho chatbot
+    console.log(
+      "🔄 Detected round-trip request but forced to ONE_WAY for chatbot"
+    );
+  }
+
+  // Xử lý một chiều (explicit one-way)
+  const oneWayKeywords = [
+    "một chiều",
+    "one way",
+    "chiều đi",
+    "chỉ đi",
+    "không về",
+  ];
+  if (oneWayKeywords.some((keyword) => lowerMessage.includes(keyword))) {
+    entities.trip_type = "ONE_WAY";
+    console.log("➡️ Detected one-way trip type");
   }
 
   console.log("✅ Simple extraction result:", entities);
@@ -511,6 +614,9 @@ async function extractEntitiesFromMessage(message) {
         );
         parsed.return_date = null;
       }
+      // Luôn đặt trip_type là ONE_WAY bất kể user yêu cầu gì
+      parsed.trip_type = "ONE_WAY";
+      console.log("🔄 Forced trip_type to ONE_WAY for chatbot");
       return parsed;
     } else {
       console.warn(

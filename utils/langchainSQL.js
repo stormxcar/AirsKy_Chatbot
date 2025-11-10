@@ -257,9 +257,25 @@ Return ONLY the SQL SELECT statement with proper JOINs, no explanations:`;
       // Execute query
       const [rows] = await this.dbPool.execute(sqlQuery);
 
+      // Process rows to parse JSON fields and ensure proper data types
+      const processedRows = rows.map((row) => ({
+        ...row,
+        flightTravelClasses: row.flight_travel_classes
+          ? JSON.parse(row.flight_travel_classes)
+          : [],
+        airline:
+          typeof row.airline_name === "string"
+            ? row.airline_name
+            : row.airline_name?.airlineName || "Unknown Airline",
+        aircraft:
+          typeof row.aircraft === "string"
+            ? row.aircraft
+            : row.aircraft?.aircraftName || "N/A",
+      }));
+
       // Process and format results
       const flightData = {
-        flights: rows,
+        flights: processedRows,
         tripType: searchCriteria.tripType,
         searchCriteria: searchCriteria,
       };
@@ -605,11 +621,31 @@ Return only valid JSON, no explanations.`;
         da.city_name AS departure_city,
         aa.airport_name AS arrival_airport_name,
         aa.airport_code AS arrival_airport_code,
-        aa.city_name AS arrival_city
+        aa.city_name AS arrival_city,
+        JSON_ARRAYAGG(
+          JSON_OBJECT(
+            'id', ftc.id,
+            'price', ftc.price,
+            'capacity', ftc.capacity,
+            'bookedSeat', ftc.booked_seat,
+            'availableSeats', ftc.available_seats,
+            'travelClass', JSON_OBJECT(
+              'id', tc.id,
+              'className', tc.class_name,
+              'benefits', tc.benefits,
+              'priceMultiplier', tc.price_multiplier,
+              'refundable', tc.refundable,
+              'changeable', tc.changeable,
+              'cancellationFee', tc.cancellation_fee
+            )
+          )
+        ) AS flight_travel_classes
       FROM flights
       JOIN airlines ON flights.airline_id = airlines.airline_id
       JOIN airports da ON flights.departure_airport_id = da.airport_id
       JOIN airports aa ON flights.arrival_airport_id = aa.airport_id
+      LEFT JOIN flight_travel_classes ftc ON flights.flight_id = ftc.flight_id
+      LEFT JOIN travel_classes tc ON ftc.travel_class_id = tc.id
       WHERE 1=1
     `;
 
@@ -635,6 +671,7 @@ Return only valid JSON, no explanations.`;
       sqlQuery += ` AND flights.round_trip_group_id IS NOT NULL`;
     }
 
+    sqlQuery += ` GROUP BY flights.flight_id, flights.flight_number, flights.departure_time, flights.arrival_time, flights.base_price, flights.trip_type, flights.round_trip_group_id, airlines.airline_name, airlines.airline_code, da.airport_name, da.airport_code, da.city_name, aa.airport_name, aa.airport_code, aa.city_name`;
     sqlQuery += ` ORDER BY flights.base_price ASC, flights.departure_time ASC LIMIT 20`;
 
     return sqlQuery;

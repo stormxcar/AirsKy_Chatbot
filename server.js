@@ -48,5 +48,4 @@ app.use(handleError);
 const PORT = serverConfig.PORT;
 server.listen(PORT, () => {
   logger.info(`🚀 AirsKy Chatbot Server running on port ${PORT}`);
-  logger.info(`📊 Health check: http://localhost:${PORT}/health`);
 });

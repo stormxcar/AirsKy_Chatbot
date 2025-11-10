@@ -13,8 +13,9 @@ async function buildSmartContext(userId, message, dbPool, entities) {
 
   let groupedFlights = null; // Store grouped flights for round-trip display
 
-  // Nếu không có thông tin tìm kiếm, trả về text response
-  if (!departureCity && !arrivalCity && !date) {
+  // Kiểm tra đầy đủ thông tin cần thiết trước khi tìm chuyến bay
+  // Luôn yêu cầu cả ngày cụ thể và chiều đi (one-way/round-trip)
+  if (!departureCity || !arrivalCity) {
     return {
       type: "text",
       message:
@@ -23,8 +24,36 @@ async function buildSmartContext(userId, message, dbPool, entities) {
     };
   }
 
+  if (!date) {
+    return {
+      type: "text",
+      message: `Bạn muốn bay từ ${departureCity} đến ${arrivalCity} vào ngày nào? Vui lòng cho tôi biết ngày cụ thể (ví dụ: ngày 15 tháng 11).`,
+      data: [],
+    };
+  }
+
+  // Kiểm tra trip_type - phải có giá trị rõ ràng (ONE_WAY hoặc ROUND_TRIP)
+  const validTripTypes = ["ONE_WAY", "ROUND_TRIP"];
+  if (!entities.trip_type || !validTripTypes.includes(entities.trip_type)) {
+    return {
+      type: "text",
+      message: `Bạn muốn bay một chiều hay khứ hồi từ ${departureCity} đến ${arrivalCity} vào ngày ${date}? Vui lòng trả lời "một chiều" hoặc "khứ hồi".`,
+      data: [],
+    };
+  }
+
+  // Nếu là khứ hồi nhưng thiếu ngày về
+  if (tripType === "ROUND_TRIP" && !entities.return_date) {
+    return {
+      type: "text",
+      message: `Bạn muốn về vào ngày nào? Vui lòng cho tôi biết ngày về cụ thể.`,
+      data: [],
+    };
+  }
+
   try {
     let queryToUse, queryParams;
+    let rows; // Declare rows outside the conditional blocks
 
     if (tripType === "MULTI_CITY") {
       // Use multi-city query with stops
@@ -52,34 +81,86 @@ async function buildSmartContext(userId, message, dbPool, entities) {
         queryParams
       );
     } else if (tripType === "ROUND_TRIP") {
-      // Use special round-trip query
-      queryToUse = queries.searchRoundTripFlights;
-      queryParams = [
-        // First direction: departureCity → arrivalCity
-        departureCity || null,
-        departureCity ? `%${departureCity}%` : null, // city_name LIKE
-        departureCity ? `%${departureCity}%` : null, // airport_name LIKE
-        departureCity || null, // airport_code =
-        arrivalCity || null,
-        arrivalCity ? `%${arrivalCity}%` : null, // city_name LIKE
-        arrivalCity ? `%${arrivalCity}%` : null, // airport_name LIKE
-        arrivalCity || null, // airport_code =
+      // For round-trip: Search for two separate one-way flights
+      // This gives users more flexibility to choose different times for outbound and return
 
-        // Second direction: arrivalCity → departureCity
-        arrivalCity || null,
-        arrivalCity ? `%${arrivalCity}%` : null, // city_name LIKE
-        arrivalCity ? `%${arrivalCity}%` : null, // airport_name LIKE
-        arrivalCity || null, // airport_code =
+      // Search outbound flights (departure → arrival)
+      const outboundQuery = queries.searchFlightsChatbot;
+      const outboundParams = [
+        departureCity ? `%${departureCity}%` : null,
+        departureCity ? `%${departureCity}%` : null,
         departureCity || null,
-        departureCity ? `%${departureCity}%` : null, // city_name LIKE
-        departureCity ? `%${departureCity}%` : null, // airport_name LIKE
-        departureCity || null, // airport_code =
+        arrivalCity ? `%${arrivalCity}%` : null,
+        arrivalCity ? `%${arrivalCity}%` : null,
+        arrivalCity || null,
+        date || null,
+        date || null,
+        "ONE_WAY", // Search for one-way flights
+        "ONE_WAY",
       ];
 
-      console.log(
-        "📝 Using searchRoundTripFlights query with params:",
-        queryParams
+      // Search return flights (arrival → departure)
+      const returnQuery = queries.searchFlightsChatbot;
+      const returnParams = [
+        arrivalCity ? `%${arrivalCity}%` : null,
+        arrivalCity ? `%${arrivalCity}%` : null,
+        arrivalCity || null,
+        departureCity ? `%${departureCity}%` : null,
+        departureCity ? `%${departureCity}%` : null,
+        departureCity || null,
+        entities.return_date || null,
+        entities.return_date || null,
+        "ONE_WAY", // Search for one-way flights
+        "ONE_WAY",
+      ];
+
+      console.log("📝 Searching round-trip as two one-way flights");
+      console.log("📝 Outbound params:", outboundParams);
+      console.log("📝 Return params:", returnParams);
+
+      // Debug: Check available cities in database
+      try {
+        const [cityResults] = await dbPool.query(`
+          SELECT DISTINCT city_name, airport_name, airport_code 
+          FROM airports 
+          WHERE city_name LIKE '%Hà Nội%' OR city_name LIKE '%Hồ Chí Minh%' 
+          OR city_name LIKE '%Sài Gòn%' OR city_name LIKE '%HCMC%'
+        `);
+        console.log("🏙️ Available cities in database:", cityResults);
+      } catch (cityError) {
+        console.error("❌ Error checking cities:", cityError);
+      }
+
+      // Execute both queries
+      const [outboundResults] = await dbPool.query(
+        outboundQuery,
+        outboundParams
       );
+      const [returnResults] = await dbPool.query(returnQuery, returnParams);
+
+      console.log("✈️ Found outbound flights:", outboundResults.length);
+      console.log("✈️ Found return flights:", returnResults.length);
+
+      // Debug: Log first few results to see data structure
+      if (outboundResults.length > 0) {
+        console.log("🔍 Sample outbound flight:", outboundResults[0]);
+      }
+      if (returnResults.length > 0) {
+        console.log("🔍 Sample return flight:", returnResults[0]);
+      }
+
+      // Combine results with direction indicator
+      const combinedResults = [
+        ...outboundResults.map((flight) => ({
+          ...flight,
+          direction: "outbound",
+        })),
+        ...returnResults.map((flight) => ({ ...flight, direction: "return" })),
+      ];
+
+      // Set rows for round-trip
+      rows = combinedResults;
+      queryToUse = "ROUND_TRIP_COMBINED";
     } else {
       // Use regular one-way query
       queryToUse = queries.searchFlightsChatbot;
@@ -109,17 +190,43 @@ async function buildSmartContext(userId, message, dbPool, entities) {
       );
     }
 
-    const [rows] = await dbPool.query(queryToUse, queryParams);
-    console.log("✈️ Found flights:", rows.length);
+    // Execute database query based on trip type
+    if (tripType === "MULTI_CITY") {
+      [rows] = await dbPool.query(queryToUse, queryParams);
+      console.log("📝 Multi-city query executed");
+    } else if (tripType === "ROUND_TRIP") {
+      // rows is already set above for round-trip
+      console.log("📝 Using combined round-trip results");
+    } else {
+      // Execute database query for one-way
+      [rows] = await dbPool.query(queryToUse, queryParams);
+    }
 
-    if (rows.length === 0) {
+    console.log("✈️ Found flights before filtering:", rows.length);
+
+    // Filter flights to only show those departing at least 4 hours from now
+    const now = new Date();
+    const fourHoursFromNow = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+
+    const filteredRows = rows.filter((flight) => {
+      if (!flight.departure_time) return false;
+      const departureTime = new Date(flight.departure_time);
+      return departureTime >= fourHoursFromNow;
+    });
+
+    console.log(
+      "✈️ Found flights after filtering (4+ hours from now):",
+      filteredRows.length
+    );
+
+    if (filteredRows.length === 0) {
       return {
         type: "flights",
         message: `Không tìm thấy chuyến bay từ ${
           departureCity || "điểm đi"
         } đến ${arrivalCity || "điểm đến"}${
           date ? ` vào ngày ${date}` : ""
-        }. Vui lòng thử ngày khác hoặc liên hệ hotline.`,
+        } khởi hành cách thời điểm hiện tại ít nhất 4 tiếng. Vui lòng thử ngày khác hoặc liên hệ hotline.`,
         data: [],
       };
     }
@@ -128,48 +235,62 @@ async function buildSmartContext(userId, message, dbPool, entities) {
     let flights;
 
     if (tripType === "ROUND_TRIP") {
-      // For round-trip, keep individual flights but add group info for display
-      flights = rows.map((flight, index) => ({
-        flightId: flight.flight_id || "N/A",
-        flightNumber: flight.flight_number || "N/A",
-        airline: flight.airline_name || "N/A",
-        tripType: "ROUND_TRIP",
-        roundTripGroupId: flight.round_trip_group_id,
-        departureAirport: flight.departure_airport_name || "N/A",
-        departureCode: flight.departure_airport_code || "N/A",
-        departureCity: flight.departure_city_name || "N/A",
-        arrivalAirport: flight.arrival_airport_name || "N/A",
-        arrivalCode: flight.arrival_airport_code || "N/A",
-        arrivalCity: flight.arrival_city_name || "N/A",
-        departureTime: flight.departure_time
-          ? new Date(flight.departure_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        arrivalTime: flight.arrival_time
-          ? new Date(flight.arrival_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        price: flight.base_price
-          ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
-          : "Liên hệ",
-      }));
+      // For round-trip, separate outbound and return flights
+      const outboundFlights = filteredRows
+        .filter((flight) => flight.direction === "outbound")
+        .map((flight, index) => ({
+          flightId: flight.flight_id || "N/A",
+          flightNumber: flight.flight_number || "N/A",
+          airline: flight.airline_name || "N/A",
+          tripType: "ROUND_TRIP", // Set as round-trip for proper template handling
+          direction: "outbound",
+          departureAirport: flight.departure_airport_name || "N/A",
+          departureCode: flight.departure_airport_code || "N/A",
+          departureCity: flight.departure_city_name || "N/A",
+          arrivalAirport: flight.arrival_airport_name || "N/A",
+          arrivalCode: flight.arrival_airport_code || "N/A",
+          arrivalCity: flight.arrival_city_name || "N/A",
+          departureTime: flight.departure_time || null,
+          arrivalTime: flight.arrival_time || null,
+          aircraft: flight.aircraft_name || "N/A",
+          price: flight.base_price
+            ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
+            : "Liên hệ",
+          duration: flight.duration || 120,
+        }));
 
-      // Group flights for markdown display
-      groupedFlights = {};
-      rows.forEach((flight) => {
-        const groupId = flight.round_trip_group_id;
-        if (!groupedFlights[groupId]) {
-          groupedFlights[groupId] = [];
-        }
-        groupedFlights[groupId].push(flight);
-      });
+      const returnFlights = filteredRows
+        .filter((flight) => flight.direction === "return")
+        .map((flight, index) => ({
+          flightId: flight.flight_id || "N/A",
+          flightNumber: flight.flight_number || "N/A",
+          airline: flight.airline_name || "N/A",
+          tripType: "ROUND_TRIP", // Set as round-trip for proper template handling
+          direction: "return",
+          departureAirport: flight.departure_airport_name || "N/A",
+          departureCode: flight.departure_airport_code || "N/A",
+          departureCity: flight.departure_city_name || "N/A",
+          arrivalAirport: flight.arrival_airport_name || "N/A",
+          arrivalCode: flight.arrival_airport_code || "N/A",
+          arrivalCity: flight.arrival_city_name || "N/A",
+          departureTime: flight.departure_time || null,
+          arrivalTime: flight.arrival_time || null,
+          aircraft: flight.aircraft_name || "N/A",
+          price: flight.base_price
+            ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
+            : "Liên hệ",
+          duration: flight.duration || 120,
+        }));
+
+      // Combine both directions for display
+      flights = [...outboundFlights, ...returnFlights];
+
+      console.log(
+        `✈️ Round-trip results: ${outboundFlights.length} outbound, ${returnFlights.length} return`
+      );
     } else if (tripType === "MULTI_CITY") {
       // Format multi-city flights with stops information
-      flights = rows.map((flight, index) => ({
+      flights = filteredRows.map((flight, index) => ({
         flightId: flight.flight_id || "N/A",
         flightNumber: flight.flight_number || "N/A",
         airline: flight.airline_name || "N/A",
@@ -178,18 +299,9 @@ async function buildSmartContext(userId, message, dbPool, entities) {
         departureCode: flight.departure_airport_code || "N/A",
         arrivalAirport: flight.arrival_airport_name || "N/A",
         arrivalCode: flight.arrival_airport_code || "N/A",
-        departureTime: flight.departure_time
-          ? new Date(flight.departure_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        arrivalTime: flight.arrival_time
-          ? new Date(flight.arrival_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
+        departureTime: flight.departure_time || null,
+        arrivalTime: flight.arrival_time || null,
+        aircraft: flight.aircraft_name || "N/A",
         price: flight.base_price
           ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
           : "Liên hệ",
@@ -197,7 +309,7 @@ async function buildSmartContext(userId, message, dbPool, entities) {
       }));
     } else {
       // Format one-way flights
-      flights = rows.map((flight, index) => ({
+      flights = filteredRows.map((flight, index) => ({
         flightId: flight.flight_id || "N/A",
         flightNumber: flight.flight_number || "N/A",
         airline: flight.airline_name || "N/A",
@@ -206,18 +318,9 @@ async function buildSmartContext(userId, message, dbPool, entities) {
         departureCode: flight.departure_airport_code || "N/A",
         arrivalAirport: flight.arrival_airport_name || "N/A",
         arrivalCode: flight.arrival_airport_code || "N/A",
-        departureTime: flight.departure_time
-          ? new Date(flight.departure_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
-        arrivalTime: flight.arrival_time
-          ? new Date(flight.arrival_time).toLocaleTimeString("vi-VN", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })
-          : "N/A",
+        departureTime: flight.departure_time || null,
+        arrivalTime: flight.arrival_time || null,
+        aircraft: flight.aircraft_name || "N/A",
         price: flight.base_price
           ? `${flight.base_price.toLocaleString("vi-VN")} ₫`
           : "N/A",
@@ -236,93 +339,43 @@ async function buildSmartContext(userId, message, dbPool, entities) {
         ? "Đa chặng"
         : "Một chiều"
     }\n`;
-    markdownMessage += `**Số chuyến bay tìm thấy:** ${
-      tripType === "ROUND_TRIP"
-        ? groupedFlights
-          ? Object.keys(groupedFlights).length
-          : 0
-        : flights.length
-    }\n\n`;
+    markdownMessage += `**Số chuyến bay tìm thấy:** ${flights.length}\n\n`;
 
     if (flights.length > 0) {
       markdownMessage += `### 📋 Danh sách chuyến bay:\n\n`;
 
       if (tripType === "ROUND_TRIP") {
-        // Use grouped flights for display
-        const groupIds = Object.keys(groupedFlights);
+        // Separate outbound and return flights display
+        const outboundFlights = flights.filter(
+          (f) => f.direction === "outbound"
+        );
+        const returnFlights = flights.filter((f) => f.direction === "return");
 
-        groupIds.forEach((groupId, index) => {
-          const groupFlights = groupedFlights[groupId];
-          groupFlights.sort(
-            (a, b) => new Date(a.departure_time) - new Date(b.departure_time)
-          );
-
-          const outbound = groupFlights[0];
-          const returnFlight = groupFlights[1];
-
-          markdownMessage += `**${index + 1}. Gói khứ hồi ${groupId}**\n`;
-          const totalPrice =
-            (outbound?.base_price || 0) + (returnFlight?.base_price || 0);
-          markdownMessage += `**Tổng giá:** ${totalPrice.toLocaleString(
-            "vi-VN"
-          )} ₫\n\n`;
-
-          if (outbound) {
-            markdownMessage += `**🏠 Chiều đi:** ${outbound.flight_number} - ${outbound.airline_name}\n`;
-            markdownMessage += `- **Từ:** ${outbound.departure_city_name} (${outbound.departure_airport_name} - ${outbound.departure_airport_code})\n`;
-            markdownMessage += `- **Đến:** ${outbound.arrival_city_name} (${outbound.arrival_airport_name} - ${outbound.arrival_airport_code})\n`;
-            markdownMessage += `- **Giờ khởi hành:** ${
-              outbound.departure_time
-                ? new Date(outbound.departure_time).toLocaleTimeString(
-                    "vi-VN",
-                    { hour: "2-digit", minute: "2-digit" }
-                  )
-                : "N/A"
+        if (outboundFlights.length > 0) {
+          markdownMessage += `#### 🛫 Chuyến đi (${departureCity} → ${arrivalCity}):\n\n`;
+          outboundFlights.forEach((flight, index) => {
+            markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${
+              flight.airline
             }\n`;
-            markdownMessage += `- **Giờ đến:** ${
-              outbound.arrival_time
-                ? new Date(outbound.arrival_time).toLocaleTimeString("vi-VN", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "N/A"
-            }\n`;
-            markdownMessage += `- **Giá vé:** ${
-              outbound.base_price
-                ? `${outbound.base_price.toLocaleString("vi-VN")} ₫`
-                : "Liên hệ"
-            }\n\n`;
-          }
+            markdownMessage += `- ${flight.departureCode} → ${flight.arrivalCode}\n`;
+            markdownMessage += `- ${flight.departureTime} - ${flight.arrivalTime}\n`;
+            markdownMessage += `- **${flight.price}**\n\n`;
+          });
+        }
 
-          if (returnFlight) {
-            markdownMessage += `**🏠 Chiều về:** ${returnFlight.flight_number} - ${returnFlight.airline_name}\n`;
-            markdownMessage += `- **Từ:** ${returnFlight.departure_city_name} (${returnFlight.departure_airport_name} - ${returnFlight.departure_airport_code})\n`;
-            markdownMessage += `- **Đến:** ${returnFlight.arrival_city_name} (${returnFlight.arrival_airport_name} - ${returnFlight.arrival_airport_code})\n`;
-            markdownMessage += `- **Giờ khởi hành:** ${
-              returnFlight.departure_time
-                ? new Date(returnFlight.departure_time).toLocaleTimeString(
-                    "vi-VN",
-                    { hour: "2-digit", minute: "2-digit" }
-                  )
-                : "N/A"
+        if (returnFlights.length > 0) {
+          markdownMessage += `#### 🛬 Chuyến về (${arrivalCity} → ${departureCity}):\n\n`;
+          returnFlights.forEach((flight, index) => {
+            markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${
+              flight.airline
             }\n`;
-            markdownMessage += `- **Giờ đến:** ${
-              returnFlight.arrival_time
-                ? new Date(returnFlight.arrival_time).toLocaleTimeString(
-                    "vi-VN",
-                    { hour: "2-digit", minute: "2-digit" }
-                  )
-                : "N/A"
-            }\n`;
-            markdownMessage += `- **Giá vé:** ${
-              returnFlight.base_price
-                ? `${returnFlight.base_price.toLocaleString("vi-VN")} ₫`
-                : "Liên hệ"
-            }\n\n`;
-          }
+            markdownMessage += `- ${flight.departureCode} → ${flight.arrivalCode}\n`;
+            markdownMessage += `- ${flight.departureTime} - ${flight.arrivalTime}\n`;
+            markdownMessage += `- **${flight.price}**\n\n`;
+          });
+        }
 
-          markdownMessage += `---\n\n`;
-        });
+        markdownMessage += `\n💡 **Hướng dẫn:** Chọn một chuyến đi và một chuyến về riêng biệt để tạo vé khứ hồi hoàn chỉnh.\n\n`;
       } else if (tripType === "MULTI_CITY") {
         flights.forEach((flight, index) => {
           markdownMessage += `**${index + 1}. ${flight.flightNumber}** - ${

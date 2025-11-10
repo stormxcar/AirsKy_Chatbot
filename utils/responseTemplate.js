@@ -1,4 +1,6 @@
 const logger = require("./logger");
+const axios = require("axios");
+// Note: `callAPI` in this project is for AI providers; do NOT reuse it for HTTP calls to backend services.
 
 /**
  * Professional Flight Response Template Builder
@@ -21,33 +23,118 @@ class FlightResponseTemplate {
   }
 
   /**
+   * Fetch full flight data from API including flightTravelClasses
+   * @param {Object} flight - Basic flight data from database
+   * @returns {Object} Full flight data with travel classes
+   */
+  async fetchFullFlightData(flight) {
+    try {
+      const flightId = flight.flightId || flight.flight_id;
+      console.log(
+        `🔍 [ResponseTemplate] Fetching full data for flight ${flightId}`
+      );
+
+      const url = `${
+        process.env.BACKEND_API_URL || "http://localhost:8080/api/v1"
+      }/flights/${flightId}`;
+      const resp = await axios.get(url, {
+        headers: { "Content-Type": "application/json" },
+        timeout: 8000,
+      });
+
+      const apiResponse = resp.data;
+      if (apiResponse && (apiResponse.success || apiResponse.data)) {
+        // Some backends return { success: true, data: {...} }, others return data directly
+        const fullData = apiResponse.data ? apiResponse.data : apiResponse;
+        console.log(
+          `✅ [ResponseTemplate] Successfully fetched full data for flight ${flightId}`
+        );
+        console.log(
+          `📋 [ResponseTemplate] flightTravelClasses:`,
+          fullData.flightTravelClasses
+        );
+        return fullData;
+      }
+
+      console.warn(
+        `⚠️ [ResponseTemplate] Unexpected API response for flight ${flightId}:`,
+        apiResponse
+      );
+      return flight; // Fallback
+    } catch (error) {
+      console.error(
+        `❌ [ResponseTemplate] Error fetching full data for flight ${
+          flight.flightId || flight.flight_id
+        }:`,
+        error.message || error
+      );
+      return flight; // Fallback to original data
+    }
+  }
+
+  /**
    * Main method to build flight response
    * @param {Object} flightData - Flight search results
    * @param {Object} queryContext - Original query context
    * @returns {Object} Formatted response
    */
-  buildResponse(flightData, queryContext = {}) {
+  async buildResponse(flightData, queryContext = {}) {
     try {
+      console.log(
+        "🔍 [ResponseTemplate] Input flightData:",
+        JSON.stringify(flightData, null, 2)
+      );
+
       const { flights, tripType, searchCriteria } = flightData;
 
+      console.log("🔍 [ResponseTemplate] Flights array:", flights);
+      console.log("🔍 [ResponseTemplate] Flights length:", flights?.length);
+      console.log("🔍 [ResponseTemplate] Trip type:", tripType);
+
       if (!flights || flights.length === 0) {
+        console.log(
+          "❌ [ResponseTemplate] No flights found, returning noResults"
+        );
         return this.templates.success.noResults(queryContext);
       }
 
+      // Fetch full flight data for each flight including flightTravelClasses
+      console.log(
+        "🔍 [ResponseTemplate] Fetching full flight data for all flights..."
+      );
+      const fullFlights = await Promise.all(
+        flights.map((flight) => this.fetchFullFlightData(flight))
+      );
+
+      console.log(
+        "✅ [ResponseTemplate] Full flights data:",
+        JSON.stringify(fullFlights, null, 2)
+      );
+
       // Group flights by trip type
-      const groupedFlights = this.groupFlightsByType(flights);
+      const groupedFlights = this.groupFlightsByType(fullFlights);
+      console.log(
+        "🔍 [ResponseTemplate] Grouped flights:",
+        JSON.stringify(groupedFlights, null, 2)
+      );
 
       // Build response based on trip type
       switch (tripType) {
         case "ROUND_TRIP":
+          console.log("🔍 [ResponseTemplate] Building round-trip template");
           return this.templates.success.roundtrip(groupedFlights, queryContext);
         case "MULTI_CITY":
+          console.log("🔍 [ResponseTemplate] Building multi-city template");
           return this.templates.success.multicity(groupedFlights, queryContext);
         default:
+          console.log("🔍 [ResponseTemplate] Building one-way template");
           return this.templates.success.oneway(groupedFlights, queryContext);
       }
     } catch (error) {
-      logger.error("Error building flight response:", error);
+      console.error(
+        "❌ [ResponseTemplate] Error building flight response:",
+        error
+      );
       return this.templates.error.general(error);
     }
   }
@@ -58,24 +145,59 @@ class FlightResponseTemplate {
    * @returns {Object} Grouped flights
    */
   groupFlightsByType(flights) {
+    console.log(
+      "🔍 [groupFlightsByType] Input flights:",
+      JSON.stringify(flights, null, 2)
+    );
+
     const grouped = {
       oneway: [],
       roundtrip: [],
       multicity: [],
     };
 
-    flights.forEach((flight) => {
-      const type =
+    flights.forEach((flight, index) => {
+      console.log(
+        `🔍 [groupFlightsByType] Processing flight ${index}:`,
+        flight
+      );
+
+      let type =
         flight.tripType?.toLowerCase() ||
         flight.trip_type?.toLowerCase() ||
         "oneway";
+
+      // Convert "round_trip" to "roundtrip" and "multi_city" to "multicity"
+      if (type === "round_trip") {
+        type = "roundtrip";
+      } else if (type === "multi_city") {
+        type = "multicity";
+      } else if (type === "one_way") {
+        type = "oneway";
+      }
+
+      console.log(
+        `🔍 [groupFlightsByType] Flight ${index} normalized type:`,
+        type
+      );
+
       if (grouped[type]) {
         grouped[type].push(flight);
+        console.log(
+          `✅ [groupFlightsByType] Added flight ${index} to ${type} group`
+        );
       } else {
         grouped.oneway.push(flight);
+        console.log(
+          `✅ [groupFlightsByType] Added flight ${index} to oneway group (fallback)`
+        );
       }
     });
 
+    console.log(
+      "🔍 [groupFlightsByType] Final grouped result:",
+      JSON.stringify(grouped, null, 2)
+    );
     return grouped;
   }
 
@@ -120,11 +242,22 @@ class FlightResponseTemplate {
    * @returns {Object} Formatted response
    */
   buildRoundTripTemplate(groupedFlights, queryContext) {
+    console.log(
+      "🔍 [buildRoundTripTemplate] Input groupedFlights:",
+      JSON.stringify(groupedFlights, null, 2)
+    );
+
     const flights = groupedFlights.roundtrip;
+    console.log("🔍 [buildRoundTripTemplate] Round-trip flights:", flights);
     const flightCount = flights.length;
+    console.log("🔍 [buildRoundTripTemplate] Flight count:", flightCount);
 
     // Group roundtrip flights by their group ID
     const roundtripGroups = this.groupRoundTripFlights(flights);
+    console.log(
+      "🔍 [buildRoundTripTemplate] Round-trip groups:",
+      JSON.stringify(roundtripGroups, null, 2)
+    );
 
     let response = {
       type: "flight_results",
@@ -150,6 +283,10 @@ class FlightResponseTemplate {
       suggestions: this.buildSuggestions(flights, queryContext),
     };
 
+    console.log(
+      "🔍 [buildRoundTripTemplate] Final response:",
+      JSON.stringify(response, null, 2)
+    );
     return response;
   }
 
@@ -249,24 +386,39 @@ class FlightResponseTemplate {
     return {
       flightId: flight.flightId || flight.flight_id,
       flightNumber: flight.flightNumber || flight.flight_number,
-      airline: flight.airline || flight.airline_name,
+      airline:
+        typeof flight.airline === "string"
+          ? flight.airline
+          : flight.airline?.airlineName ||
+            flight.airline_name ||
+            "Unknown Airline",
       tripType: flight.tripType || flight.trip_type || "ONE_WAY",
       departureAirport:
         flight.departureAirport || flight.departure_airport_name,
       departureCode: flight.departureCode || flight.departure_airport_code,
+      departureCity: flight.departureCity || flight.departure_city_name,
       arrivalAirport: flight.arrivalAirport || flight.arrival_airport_name,
       arrivalCode: flight.arrivalCode || flight.arrival_airport_code,
+      arrivalCity: flight.arrivalCity || flight.arrival_city_name,
       departureTime: this.formatTime(
         flight.departureTime || flight.departure_time
       ),
+      departureDate: this.formatDate(
+        flight.departureTime || flight.departure_time
+      ),
       arrivalTime: this.formatTime(flight.arrivalTime || flight.arrival_time),
+      arrivalDate: this.formatDate(flight.arrivalTime || flight.arrival_time),
       price: this.formatPrice(flight.price || flight.base_price),
       duration: this.calculateDuration(
         flight.departureTime || flight.departure_time,
         flight.arrivalTime || flight.arrival_time
       ),
       stops: flight.stops || 0,
-      aircraft: flight.aircraft || "N/A",
+      aircraft:
+        typeof flight.aircraft === "string"
+          ? flight.aircraft
+          : flight.aircraft?.aircraftName || flight.aircraft_name || "N/A",
+      flightTravelClasses: flight.flightTravelClasses || [], // Include travel classes
     };
   }
 
@@ -279,23 +431,97 @@ class FlightResponseTemplate {
     const outbound = group.outbound;
     const returnFlight = group.return;
 
-    return {
-      flightId: `roundtrip-${outbound.flightId || outbound.flight_id}-${
-        returnFlight.flightId || returnFlight.flight_id
-      }`,
-      flightNumber: `${outbound.flightNumber || outbound.flight_number} / ${
-        returnFlight.flightNumber || returnFlight.flight_number
-      }`,
-      airline: outbound.airline || outbound.airline_name,
-      tripType: "ROUND_TRIP",
-      outboundFlight: this.formatFlightCard(outbound),
-      returnFlight: this.formatFlightCard(returnFlight),
-      totalPrice: this.formatPrice(
-        parseFloat(outbound.price || outbound.base_price || 0) +
-          parseFloat(returnFlight.price || returnFlight.base_price || 0)
-      ),
-      totalDuration: this.calculateTotalDuration(outbound, returnFlight),
-    };
+    // Handle individual flights (either outbound-only or return-only)
+    if (outbound && !returnFlight) {
+      // Outbound flight only
+      return {
+        flightId: outbound.flightId || outbound.flight_id,
+        flightNumber: outbound.flightNumber || outbound.flight_number,
+        airline: outbound.airline || outbound.airline_name,
+        tripType: "ROUND_TRIP",
+        direction: "outbound",
+        departureAirport:
+          outbound.departureAirport || outbound.departure_airport_name,
+        departureCode:
+          outbound.departureCode || outbound.departure_airport_code,
+        departureCity: outbound.departureCity || outbound.departure_city_name,
+        arrivalAirport:
+          outbound.arrivalAirport || outbound.arrival_airport_name,
+        arrivalCode: outbound.arrivalCode || outbound.arrival_airport_code,
+        arrivalCity: outbound.arrivalCity || outbound.arrival_city_name,
+        departureTime: this.formatTime(
+          outbound.departureTime || outbound.departure_time
+        ),
+        departureDate: this.formatDate(
+          outbound.departureTime || outbound.departure_time
+        ),
+        arrivalTime: this.formatTime(
+          outbound.arrivalTime || outbound.arrival_time
+        ),
+        arrivalDate: this.formatDate(
+          outbound.arrivalTime || outbound.arrival_time
+        ),
+        aircraft: outbound.aircraft || outbound.aircraft_name,
+        price: outbound.price || this.formatPrice(outbound.base_price),
+        duration: outbound.duration || 120,
+      };
+    } else if (returnFlight && !outbound) {
+      // Return flight only
+      return {
+        flightId: returnFlight.flightId || returnFlight.flight_id,
+        flightNumber: returnFlight.flightNumber || returnFlight.flight_number,
+        airline: returnFlight.airline || returnFlight.airline_name,
+        tripType: "ROUND_TRIP",
+        direction: "return",
+        departureAirport:
+          returnFlight.departureAirport || returnFlight.departure_airport_name,
+        departureCode:
+          returnFlight.departureCode || returnFlight.departure_airport_code,
+        departureCity:
+          returnFlight.departureCity || returnFlight.departure_city_name,
+        arrivalAirport:
+          returnFlight.arrivalAirport || returnFlight.arrival_airport_name,
+        arrivalCode:
+          returnFlight.arrivalCode || returnFlight.arrival_airport_code,
+        arrivalCity: returnFlight.arrivalCity || returnFlight.arrival_city_name,
+        departureTime: this.formatTime(
+          returnFlight.departureTime || returnFlight.departure_time
+        ),
+        departureDate: this.formatDate(
+          returnFlight.departureTime || returnFlight.departure_time
+        ),
+        arrivalTime: this.formatTime(
+          returnFlight.arrivalTime || returnFlight.arrival_time
+        ),
+        arrivalDate: this.formatDate(
+          returnFlight.arrivalTime || returnFlight.arrival_time
+        ),
+        aircraft: returnFlight.aircraft || returnFlight.aircraft_name,
+        price: returnFlight.price || this.formatPrice(returnFlight.base_price),
+        duration: returnFlight.duration || 120,
+      };
+    } else if (outbound && returnFlight) {
+      // Traditional paired round-trip
+      return {
+        flightId: `roundtrip-${outbound.flightId || outbound.flight_id}-${
+          returnFlight.flightId || returnFlight.flight_id
+        }`,
+        flightNumber: `${outbound.flightNumber || outbound.flight_number} / ${
+          returnFlight.flightNumber || returnFlight.flight_number
+        }`,
+        airline: outbound.airline || outbound.airline_name,
+        tripType: "ROUND_TRIP",
+        outboundFlight: this.formatFlightCard(outbound),
+        returnFlight: this.formatFlightCard(returnFlight),
+        totalPrice: this.formatPrice(
+          parseFloat(outbound.price || outbound.base_price || 0) +
+            parseFloat(returnFlight.price || returnFlight.base_price || 0)
+        ),
+        totalDuration: this.calculateTotalDuration(outbound, returnFlight),
+      };
+    }
+
+    return null;
   }
 
   /**
@@ -322,10 +548,25 @@ class FlightResponseTemplate {
    * @returns {Array} Grouped round-trip flights
    */
   groupRoundTripFlights(flights) {
+    console.log(
+      "🔍 [groupRoundTripFlights] Input flights:",
+      JSON.stringify(flights, null, 2)
+    );
+
     const groups = {};
 
-    flights.forEach((flight) => {
+    flights.forEach((flight, index) => {
+      console.log(
+        `🔍 [groupRoundTripFlights] Processing flight ${index}:`,
+        flight
+      );
+
       const groupId = flight.roundTripGroupId || flight.round_trip_group_id;
+      console.log(
+        `🔍 [groupRoundTripFlights] Flight ${index} groupId:`,
+        groupId
+      );
+
       if (groupId) {
         if (!groups[groupId]) {
           groups[groupId] = { outbound: null, return: null };
@@ -338,12 +579,50 @@ class FlightResponseTemplate {
         } else {
           groups[groupId].return = flight;
         }
+      } else if (flight.direction) {
+        console.log(
+          `🔍 [groupRoundTripFlights] Flight ${index} has direction:`,
+          flight.direction
+        );
+        // Handle direction-based flights (our new approach)
+        // For our use case, we want to show outbound and return flights separately
+        // So we create individual "groups" for each flight
+        const individualGroupId = `${flight.direction}-${
+          flight.flightId || flight.flight_id
+        }`;
+        console.log(
+          `🔍 [groupRoundTripFlights] Creating individual group:`,
+          individualGroupId
+        );
+
+        if (flight.direction === "outbound") {
+          groups[individualGroupId] = { outbound: flight, return: null };
+          console.log(
+            `✅ [groupRoundTripFlights] Added outbound flight to group ${individualGroupId}`
+          );
+        } else if (flight.direction === "return") {
+          groups[individualGroupId] = { outbound: null, return: flight };
+          console.log(
+            `✅ [groupRoundTripFlights] Added return flight to group ${individualGroupId}`
+          );
+        }
+      } else {
+        console.log(
+          `⚠️ [groupRoundTripFlights] Flight ${index} has no groupId or direction`
+        );
       }
     });
 
-    return Object.values(groups).filter(
-      (group) => group.outbound && group.return
+    // Return both paired groups and individual flights
+    const result = Object.values(groups).filter(
+      (group) => group.outbound || group.return
     );
+
+    console.log(
+      "🔍 [groupRoundTripFlights] Final grouped result:",
+      JSON.stringify(result, null, 2)
+    );
+    return result;
   }
 
   /**

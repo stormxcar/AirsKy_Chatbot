@@ -58,6 +58,7 @@ const searchFlightsChatbot = `
     flights.trip_type,
     airlines.airline_name,
     airlines.airline_code,
+    aircrafts.aircraft_name AS aircraft_name,
     da.airport_name AS departure_airport_name,
     da.airport_code AS departure_airport_code,
     da.city_name AS departure_city,
@@ -66,6 +67,7 @@ const searchFlightsChatbot = `
     aa.city_name AS arrival_city
   FROM flights
   JOIN airlines ON flights.airline_id = airlines.airline_id
+  LEFT JOIN aircrafts ON flights.aircraft_id = aircrafts.aircraft_id
   JOIN airports da ON flights.departure_airport_id = da.airport_id
   JOIN airports aa ON flights.arrival_airport_id = aa.airport_id
   WHERE
@@ -105,11 +107,13 @@ const searchRoundTripFlights = `
     (
       (da.city_name LIKE ? OR da.airport_name LIKE ? OR da.airport_code = ?)
       AND (aa.city_name LIKE ? OR aa.airport_name LIKE ? OR aa.airport_code = ?)
+      AND (DATE(flights.departure_time) = ? OR ? IS NULL)
     )
     OR
     (
       (da.city_name LIKE ? OR da.airport_name LIKE ? OR da.airport_code = ?)
       AND (aa.city_name LIKE ? OR aa.airport_name LIKE ? OR aa.airport_code = ?)
+      AND (DATE(flights.departure_time) = ? OR ? IS NULL)
     )
     AND flights.round_trip_group_id IS NOT NULL
   ORDER BY flights.base_price ASC, flights.departure_time ASC
@@ -129,6 +133,7 @@ const searchMultiCityFlights = `
     f.trip_type,
     al.airline_name,
     al.airline_code,
+    ac.aircraft_name AS aircraft_name,
     da.airport_name AS departure_airport_name,
     da.airport_code AS departure_airport_code,
     da.city_name AS departure_city,
@@ -149,6 +154,8 @@ const searchMultiCityFlights = `
     flights f
   JOIN
     airlines al ON f.airline_id = al.airline_id
+  LEFT JOIN
+    aircrafts ac ON f.aircraft_id = ac.aircraft_id
   JOIN
     airports da ON f.departure_airport_id = da.airport_id
   JOIN
